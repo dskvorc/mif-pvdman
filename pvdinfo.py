@@ -1,5 +1,3 @@
-from netaddr import IPNetwork
-
 # https://tools.ietf.org/html/rfc4861
 class MTUInfo:
   def __init__(self, mtu):
