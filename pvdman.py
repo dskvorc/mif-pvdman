@@ -159,6 +159,19 @@ class PvdManager:
     
 
   @staticmethod
+  def listPvds():
+    pvdData = []
+    for pvdKey, pvd in PvdManager.pvds.items():
+      pvdData.append((pvd.phyIfaceName, pvd.pvdId))
+    return pvdData
+
+
+  @staticmethod
+  def getPvdInfo(phyIfaceName, pvdId):
+    return PvdManager.pvds.get((phyIfaceName, pvdId))
+
+
+  @staticmethod
   def cleanup():
     for pvdKey, pvd in PvdManager.pvds.items():
       PvdManager.removePvd(pvd.phyIfaceName, pvd.pvdId)
@@ -174,6 +187,9 @@ rdnss = RDNSSInfo(600, ['192.168.77.2'])
 dnssl = DNSSLInfo(600, ['zemris.fer.hr', 'fer.hr', 'fer.unizg.hr'])
 pvd1 = PvdInfo('f037ea62-ee4f-44e4-825c-16f2f5cc9b3f', mtu, [prefix], [route], [rdnss], [dnssl], None, None)
 PvdManager.setPvd('eno16777736', pvd1)
+pvd1.pvdId = 'f037ea62-ee4f-44e4-825c-16f2f5cc9b3e'
+PvdManager.setPvd('eno16777736', pvd1)
 print (PvdManager.pvds)
+print (PvdManager.listPvds())
 
 #PvdManager.removePvd('eno16777736', pvd1.pvdId)
