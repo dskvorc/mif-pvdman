@@ -1,9 +1,9 @@
 import os
 import shutil
-import atexit
 from pvdinfo import *
 from pyroute2 import netns
 from pyroute2 import IPRoute
+from pyroute2 import IPDB
 
 class PvdRecord:
   def __init__(self, pvdId, pvdInfo, phyIfaceName, pvdIfaceName, netnsName):
@@ -17,107 +17,128 @@ class PvdRecord:
   def __repr__(self):
     return '(' + self.pvdId + ', ' + self.phyIfaceName + ', ' + self.pvdIfaceName + ', ' + self.netnsName + ')'
 
-    
+
 class PvdManager:
-  pvds = {}
+  # TODO: remove this, just for testing in IPv4-only environment
+  __DEF_GATEWAY = '192.168.77.2'
 
   __NETNS_PREFIX = 'mifpvd-'
   __netnsIdGenerator = 0;
   __PVD_IFACE_PREFIX = 'mifpvd-'
   __pvdIfaceIdGenerator = 0;
   __DNS_CONF_FILE = '/etc/netns/%NETNS_NAME%/resolv.conf'
+  
+  
+  def __init__(self):
+    self.pvds = {}
+    self.ipRoot = IPRoute()
+    self.ipdbRoot = IPDB()
+    self.ipdbRoot.register_callback(self.__onIfaceStateChange)
+    self.ipNetns = None
+    self.ipdbNetns = None
 
-  global ipRoot, ipNetns  
-  ipRoot = IPRoute()
+
+  def __onIfaceStateChange(self, ipdb, msg, action):
+    if (ipdb == self.ipdbRoot):
+      netnsName = 'root'
+    elif (ipdb == self.ipdbNetns):
+      netnsName = 'netns'
+
+    if (action == 'RTM_NEWLINK' or action == 'RTM_DELLINK'):
+      for attr in msg['attrs']:
+        if attr[0] == 'IFLA_IFNAME':
+          ifaceName = attr[1]
+        elif attr[0] == 'IFLA_OPERSTATE':
+          ifaceState = attr[1]
+      if (action == 'RTM_NEWLINK'):
+        print netnsName + ': ' + ifaceName + ' ADDED, state: ' + ifaceState
+      elif (action == 'RTM_DELLINK'):
+        print netnsName + ': ' + ifaceName + ' DELETED, state: ' + ifaceState
 
 
-  @staticmethod
-  def __getNetnsName():
-    PvdManager.__netnsIdGenerator += 1;
-    netnsName = PvdManager.__NETNS_PREFIX + str(PvdManager.__netnsIdGenerator)
-    while (netnsName in netns.listnetns()):
-      PvdManager.__netnsIdGenerator += 1;
-      netnsName = PvdManager.__NETNS_PREFIX + str(PvdManager.__netnsIdGenerator)
+  def __getNetnsName(self):
+    netnsName = None
+    while (not netnsName or netnsName in netns.listnetns()):
+      self.__netnsIdGenerator += 1;
+      netnsName = self.__NETNS_PREFIX + str(self.__netnsIdGenerator)
     return netnsName
     
     
-  @staticmethod
-  def __getPvdIfaceName():
-    PvdManager.__pvdIfaceIdGenerator += 1;
-    pvdIfaceName = PvdManager.__PVD_IFACE_PREFIX + str(PvdManager.__pvdIfaceIdGenerator)
-    while (len(ipRoot.link_lookup(ifname=pvdIfaceName)) > 0):
-      PvdManager.__pvdIfaceIdGenerator += 1;
-      pvdIfaceName = PvdManager.__PVD_IFACE_PREFIX + str(PvdManager.__pvdIfaceIdGenerator)
+  def __getPvdIfaceName(self):
+    pvdIfaceName = None
+    while (not pvdIfaceName or len(self.ipRoot.link_lookup(ifname=pvdIfaceName)) > 0):
+      self.__pvdIfaceIdGenerator += 1;
+      pvdIfaceName = self.__PVD_IFACE_PREFIX + str(self.__pvdIfaceIdGenerator)
     return pvdIfaceName
 
 
-  @staticmethod
-  def __getDnsConfPath(netnsName):
-    dnsConfFile = PvdManager.__DNS_CONF_FILE.replace('%NETNS_NAME%', netnsName)
+  def __getDnsConfPath(self, netnsName):
+    dnsConfFile = self.__DNS_CONF_FILE.replace('%NETNS_NAME%', netnsName)
     dnsConfDir = dnsConfFile[0:dnsConfFile.rfind('/')]
     return (dnsConfDir, dnsConfFile)
 
 
-  @staticmethod
-  def setPvd(phyIfaceName, pvdInfo):
-    phyIfaceIndex = ipRoot.link_lookup(ifname=phyIfaceName)
+  def setPvd(self, phyIfaceName, pvdInfo):
+    phyIfaceIndex = self.ipRoot.link_lookup(ifname=phyIfaceName)
     if (len(phyIfaceIndex) > 0):
       phyIfaceIndex = phyIfaceIndex[0]
-      if (PvdManager.pvds.get((phyIfaceName, pvdInfo.pvdId)) is None):
+      if (self.pvds.get((phyIfaceName, pvdInfo.pvdId)) is None):
         # create a record to track the configured PvDs
-        pvd = PvdRecord(pvdInfo.pvdId, pvdInfo, phyIfaceName, PvdManager.__getPvdIfaceName(), PvdManager.__getNetnsName())
+        pvd = PvdRecord(pvdInfo.pvdId, pvdInfo, phyIfaceName, self.__getPvdIfaceName(), self.__getNetnsName())
 
         # create a new network namespace to isolate the PvD configuration
         # the namespace with the given name should not exist, according to the name selection procedure specified in __getNetnsName()
         netns.create(pvd.netnsName)
 
         # create a virtual interface where PvD parameters are going to be configured, then move the interface to an isolated network namespace
-        ipRoot.link_create(ifname=pvd.pvdIfaceName, kind='macvlan', link=phyIfaceIndex)
-        pvdIfaceIndex = ipRoot.link_lookup(ifname=pvd.pvdIfaceName)
-        ipRoot.link('set', index=pvdIfaceIndex[0], net_ns_fd=pvd.netnsName)
+        self.ipRoot.link_create(ifname=pvd.pvdIfaceName, kind='macvlan', link=phyIfaceIndex)
+        pvdIfaceIndex = self.ipRoot.link_lookup(ifname=pvd.pvdIfaceName)
+        self.ipRoot.link('set', index=pvdIfaceIndex[0], net_ns_fd=pvd.netnsName)
         
-        # change the namespace and get a new IPRoute handle to operate in new namespace
+        # change the namespace and get a new NETLINK handles to operate in new namespace
         netns.setns(pvd.netnsName)
-        ipNetns = IPRoute()
+        self.ipNetns = IPRoute()
+        self.ipdbNetns = IPDB()
+        self.ipdbNetns.register_callback(self.__onIfaceStateChange)
 
         # get new index since interface has been moved to a different namespace
-        loIfaceIndex = ipNetns.link_lookup(ifname='lo')
+        loIfaceIndex = self.ipNetns.link_lookup(ifname='lo')
         if (len(loIfaceIndex) > 0):
           loIfaceIndex = loIfaceIndex[0]
-        pvdIfaceIndex = ipNetns.link_lookup(ifname=pvd.pvdIfaceName)
+        pvdIfaceIndex = self.ipNetns.link_lookup(ifname=pvd.pvdIfaceName)
         if (len(pvdIfaceIndex) > 0):
           pvdIfaceIndex = pvdIfaceIndex[0]
 
         # start interfaces
-        ipNetns.link_up(loIfaceIndex)
-        ipNetns.link_up(pvdIfaceIndex)
+        self.ipNetns.link_up(loIfaceIndex)
+        self.ipNetns.link_up(pvdIfaceIndex)
 
         # clear interface configuration if exists
-        ipNetns.flush_addr(index=pvdIfaceIndex)
-        ipNetns.flush_routes(index=pvdIfaceIndex)
-        ipNetns.flush_rules(index=pvdIfaceIndex)
+        self.ipNetns.flush_addr(index=pvdIfaceIndex)
+        self.ipNetns.flush_routes(index=pvdIfaceIndex)
+        self.ipNetns.flush_rules(index=pvdIfaceIndex)
 
         # configure the interface with data received in RA message
         if (pvdInfo.mtu):
-          ipNetns.link('set', index=pvdIfaceIndex, mtu=pvdInfo.mtu.mtu)
+          self.ipNetns.link('set', index=pvdIfaceIndex, mtu=pvdInfo.mtu.mtu)
 
         if (pvdInfo.prefixes):
           for prefix in pvdInfo.prefixes:
-            ipNetns.addr('add', index=pvdIfaceIndex, address=prefix.prefix, prefixlen=prefix.prefixLength)
+            self.ipNetns.addr('add', index=pvdIfaceIndex, address=prefix.prefix, prefixlen=prefix.prefixLength)
 
         if (pvdInfo.routes):
           for route in pvdInfo.routes:
             # TODO: some IPV4 routes are added during interface prefix configuration, skip them if already there
             try:
-              ipNetns.route('add', dst=route.prefix, mask=prefix.prefixLength, oif=pvdIfaceIndex, rtproto='RTPROT_STATIC', rtscope='RT_SCOPE_LINK')
+              self.ipNetns.route('add', dst=route.prefix, mask=prefix.prefixLength, oif=pvdIfaceIndex, rtproto='RTPROT_STATIC', rtscope='RT_SCOPE_LINK')
             except:
               pass
         # TODO: default route for IPv4
-        ipNetns.route('add', dst='0.0.0.0', oif=pvdIfaceIndex, gateway=DEF_GATEWAY, rtproto='RTPROT_STATIC')
+        self.ipNetns.route('add', dst='0.0.0.0', oif=pvdIfaceIndex, gateway=self.__DEF_GATEWAY, rtproto='RTPROT_STATIC')
 
         # configure DNS data in resolv.conf
         if (pvdInfo.rdnsses or pvdInfo.dnssls):
-          (dnsConfDir, dnsConfFile) = PvdManager.__getDnsConfPath(pvd.netnsName)
+          (dnsConfDir, dnsConfFile) = self.__getDnsConfPath(pvd.netnsName)
           # delete the namespace-related DNS configuration directory if exists and create empty one
           shutil.rmtree(dnsConfDir, True)
           os.makedirs(dnsConfDir)
@@ -137,59 +158,37 @@ class PvdManager:
               dnsConfFile.write('search ' + ' '.join('{}'.format(domainName) for domainName in dnssl.domainNames))
 
         # if PvD configuration completed successfully, add PvD record to the PvD manager's log
-        PvdManager.pvds[(phyIfaceName, pvd.pvdId)] = pvd
+        self.pvds[(phyIfaceName, pvd.pvdId)] = pvd
       else:
         raise Exception('PvD duplicate error: PvD with ID ' + pvdInfo.pvdId + ' is already configured on ' + phyIfaceName + '.')
     else:
       raise Exception('Interface ' + phyIfaceName + ' does not exist.')
 
 
-  @staticmethod
-  def removePvd(phyIfaceName, pvdId):
-    pvd = PvdManager.pvds.get((phyIfaceName, pvdId))
+  def removePvd(self, phyIfaceName, pvdId):
+    pvd = self.pvds.get((phyIfaceName, pvdId))
     if (pvd):
       if (pvd.netnsName in netns.listnetns()):
         netns.remove(pvd.netnsName)
-      (dnsConfDir, dnsConfFile) = PvdManager.__getDnsConfPath(pvd.netnsName)
+      (dnsConfDir, dnsConfFile) = self.__getDnsConfPath(pvd.netnsName)
       if (os.path.exists(dnsConfDir)):
         shutil.rmtree(dnsConfDir, True)
-      del PvdManager.pvds[(phyIfaceName, pvdId)]
+      del self.pvds[(phyIfaceName, pvdId)]
     else:
       raise Exception('There is no PvD with ID ' + pvdInfo.pvdId + ' configured on ' + phyIfaceName + '.')
     
 
-  @staticmethod
-  def listPvds():
+  def listPvds(self):
     pvdData = []
-    for pvdKey, pvd in PvdManager.pvds.items():
+    for pvdKey, pvd in self.pvds.items():
       pvdData.append((pvd.phyIfaceName, pvd.pvdId))
     return pvdData
 
 
-  @staticmethod
-  def getPvdInfo(phyIfaceName, pvdId):
-    return PvdManager.pvds.get((phyIfaceName, pvdId))
+  def getPvdInfo(self, phyIfaceName, pvdId):
+    return self.pvds.get((phyIfaceName, pvdId))
 
 
-  @staticmethod
-  def cleanup():
-    for pvdKey, pvd in PvdManager.pvds.items():
-      PvdManager.removePvd(pvd.phyIfaceName, pvd.pvdId)
-
-
-#atexit.register(PvdManager.cleanup)
-
-mtu = MTUInfo(1234)
-prefix = PrefixInfo(24, True, True, 600, 600, '192.168.77.130')
-route = RouteInfo(24, None, 600, '192.168.77.0')
-DEF_GATEWAY = '192.168.77.2'
-rdnss = RDNSSInfo(600, ['192.168.77.2'])
-dnssl = DNSSLInfo(600, ['zemris.fer.hr', 'fer.hr', 'fer.unizg.hr'])
-pvd1 = PvdInfo('f037ea62-ee4f-44e4-825c-16f2f5cc9b3f', mtu, [prefix], [route], [rdnss], [dnssl], None, None)
-PvdManager.setPvd('eno16777736', pvd1)
-pvd1.pvdId = 'f037ea62-ee4f-44e4-825c-16f2f5cc9b3e'
-PvdManager.setPvd('eno16777736', pvd1)
-print (PvdManager.pvds)
-print (PvdManager.listPvds())
-
-#PvdManager.removePvd('eno16777736', pvd1.pvdId)
+  def cleanup(self):
+    for pvdKey, pvd in self.pvds.items():
+      self.removePvd(pvd.phyIfaceName, pvd.pvdId)
