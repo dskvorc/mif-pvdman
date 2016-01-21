@@ -128,7 +128,7 @@ class NDPClient:
 				dest = socket.inet_ntop ( socket.AF_INET6, cmsg_data[:-4] )
 				iface_id = int.from_bytes(cmsg_data[-4:], byteorder=sys.byteorder)
 				break
-		print("received through interface " + str(iface_id) )
+		print("RA received through interface " + str(iface_id) )
 		iface = socket.if_indextoname(iface_id)
 		return NdpMsg.from_packet ( packet, src, dest, iface )
 
