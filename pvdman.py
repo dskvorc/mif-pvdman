@@ -1,6 +1,9 @@
 import os
 import shutil
 import time
+import socket
+import netaddr
+import atexit
 from pvdinfo import *
 from pyroute2 import netns
 from pyroute2 import IPRoute
@@ -31,15 +34,14 @@ class Pvd:
 
 
 class PvdManager:
-  # TODO: remove this, just for testing in IPv4-only environment
-  __DEF_GATEWAY = '192.168.164.2'
-
   __NETNS_PREFIX = 'mifpvd-'
   __netnsIdGenerator = 0;
   __PVD_IFACE_PREFIX = 'mifpvd-'
   __pvdIfaceIdGenerator = 0;
   __DNS_CONF_FILE = '/etc/netns/%NETNS_NAME%/resolv.conf'
-  
+
+  __NETNS_DEFAULT_PROC = '/proc/1/ns/net'
+  __NETNS_DEFAULT_NAME = 'mifpvd-default'
   
   '''
   PRIVATE METHODS
@@ -50,6 +52,20 @@ class PvdManager:
     self.ipRoot = IPRoute()
     self.ipdbRoot = IPDB()
     self.ipdbRoot.register_callback(self.__onIfaceStateChange)
+
+    # create a symbolic link to be able to return to a default network namespace
+    netnsDir = netns.NETNS_RUN_DIR
+    if (not netnsDir.endswith('/')):
+      netnsDir += '/'
+    linkNetnsDefault = netnsDir + self.__NETNS_DEFAULT_NAME
+    if (not os.path.exists(netnsDir)):
+      os.makedirs(netnsDir)
+    if (os.path.exists(linkNetnsDefault) and os.path.islink(linkNetnsDefault)):
+      os.unlink(linkNetnsDefault)
+    os.symlink(self.__NETNS_DEFAULT_PROC, linkNetnsDefault)
+
+    # register a cleanup handler to remove configured PvDs and associated components at exit
+    atexit.register(self.cleanup)
 
 
   def __onIfaceStateChange(self, ipdb, msg, action):
@@ -110,6 +126,9 @@ class PvdManager:
     ip = IPRoute()
     ipdb = IPDB()
     ipdb.register_callback(self.__onIfaceStateChange)
+    # return to a default network namespace to not cause a colision with other modules
+    # ip and ipdb handles continue to work in the target network namespace
+    netns.setns(self.__NETNS_DEFAULT_NAME)
 
     # get new index since interface has been moved to a different namespace
     loIfaceIndex = ip.link_lookup(ifname='lo')
@@ -146,19 +165,22 @@ class PvdManager:
       if (pvdInfo.mtu):
         ip.link('set', index=ifaceIndex, mtu=pvdInfo.mtu.mtu)
 
+      # get interface MAC address to derive the IPv6 address from
+      iface = ip.get_links(ifaceIndex)[0]
+      mac = iface.get_attr('IFLA_ADDRESS')
       if (pvdInfo.prefixes):
         for prefix in pvdInfo.prefixes:
-          ip.addr('add', index=ifaceIndex, address=prefix.prefix, prefixlen=prefix.prefixLength)
+          # TODO: PrefixInfo should contain IPAddress instead of str
+          ipAddress = str(netaddr.EUI(mac).ipv6(netaddr.IPAddress(prefix.prefix)))
+          ip.addr('add', index=ifaceIndex, address=ipAddress, prefixlen=prefix.prefixLength, family=socket.AF_INET6)
 
       if (pvdInfo.routes):
         for route in pvdInfo.routes:
-          # TODO: some IPV4 routes are added during interface prefix configuration, skip them if already there
+          # some routes may be added during interface prefix configuration, skip them if already there
           try:
-            ip.route('add', dst=route.prefix, mask=route.prefixLength, oif=ifaceIndex, rtproto='RTPROT_STATIC', rtscope='RT_SCOPE_LINK')
+            ip.route('add', dst=route.prefix, mask=route.prefixLength, oif=ifaceIndex, rtproto='RTPROT_STATIC', rtscope='RT_SCOPE_LINK', family=socket.AF_INET6)
           except:
             pass
-      # TODO: default route for IPv4
-      ip.route('add', dst='0.0.0.0', oif=ifaceIndex, gateway=self.__DEF_GATEWAY, rtproto='RTPROT_STATIC')
 
 
   def __configureDns(self, pvdInfo, netnsName):
@@ -187,6 +209,7 @@ class PvdManager:
 
 
   def __createPvd(self, phyIfaceName, pvdInfo):
+    print('[' + time.strftime('%Y-%m-%d %H:%M:%S') + '] CREATING PvD ' + pvdInfo.pvdId + ' received on interface ' + phyIfaceName)
     phyIfaceIndex = self.ipRoot.link_lookup(ifname=phyIfaceName)
     if (len(phyIfaceIndex) > 0):
       phyIfaceIndex = phyIfaceIndex[0]
@@ -200,6 +223,8 @@ class PvdManager:
         self.__configureDns(pvdInfo, netnsName)
         # if PvD configuration completed successfully, add PvD record to the PvD manager's log
         self.pvds[(phyIfaceName, pvd.pvdId)] = pvd
+        print('[' + time.strftime('%Y-%m-%d %H:%M:%S') + '] PvD ' + pvdInfo.pvdId + ' received on interface ' + phyIfaceName +
+              ' CONFIGURED in namespace ' + netnsName + ', macvlan interface ' + pvdIfaceName)
       else:
         raise Exception('PvD duplicate error: PvD with ID ' + pvdInfo.pvdId + ' is already configured on ' + phyIfaceName + '.')
     else:
@@ -207,25 +232,34 @@ class PvdManager:
 
 
   def __updatePvd(self, phyIfaceName, pvdInfo):
+    print('[' + time.strftime('%Y-%m-%d %H:%M:%S') + '] UPDATING PvD ' + pvdInfo.pvdId + ' received on interface ' + phyIfaceName)
     pvd = self.pvds.get((phyIfaceName, pvdInfo.pvdId))
     if (pvd):
       if (pvd.pvdInfo == pvdInfo):
         # if PvD parameters did not change, just update the timestamp in the PvD manager's log
         pvd.updateTimestamp()
+        print('[' + time.strftime('%Y-%m-%d %H:%M:%S') + '] PvD ' + pvdInfo.pvdId + ' received on interface ' + phyIfaceName +
+              ': NO CHANGE in parameters, timestamp UPDATED')
       else:
         # if any of the PvD parameters has changed, reconfigure the PvD
         netns.setns(pvd.netnsName)
         ip = IPRoute()
+        # return to a default network namespace to not cause a colision with other modules  
+        # ip handle continues to work in the target network namespace
+        netns.setns(self.__NETNS_DEFAULT_NAME)
         self.__configureNetwork(pvd.pvdIfaceName, pvdInfo, ip)
         self.__configureDns(pvdInfo, pvd.netnsName)
         # update the PvD record in the PvD manager's log
         pvd.pvdInfo = pvdInfo
         pvd.updateTimestamp()
+        print('[' + time.strftime('%Y-%m-%d %H:%M:%S') + '] PvD ' + pvdInfo.pvdId + ' received on interface ' + phyIfaceName +
+              ' RECONFIGURED in namespace ' + pvd.netnsName + ', macvlan interface ' + pvd.pvdIfaceName)
     else:
       raise Exception('There is no PvD with ID ' + pvdInfo.pvdId + ' configured on ' + phyIfaceName + '.')
 
 
   def __removePvd(self, phyIfaceName, pvdId):
+    print('[' + time.strftime('%Y-%m-%d %H:%M:%S') + '] REMOVING PvD ' + pvdId + ' received on interface ' + phyIfaceName)
     pvd = self.pvds.get((phyIfaceName, pvdId))
     if (pvd):
       # remove the network namespace associated with the PvD (this in turn removes the PvD network configuration as well)
@@ -237,6 +271,8 @@ class PvdManager:
         shutil.rmtree(dnsConfDir, True)
       # remove the PvD record from the PvD manager's log
       del self.pvds[(phyIfaceName, pvdId)]
+      print('[' + time.strftime('%Y-%m-%d %H:%M:%S') + '] PvD ' + pvd.pvdId + ' received on interface ' + pvd.phyIfaceName +
+            ' REMOVED, namespace ' + pvd.netnsName + ' deleted, DNS directory ' + dnsConfDir + ' deleted')
     else:
       raise Exception('There is no PvD with ID ' + pvdInfo.pvdId + ' configured on ' + phyIfaceName + '.')
 
@@ -274,5 +310,7 @@ class PvdManager:
 
 
   def cleanup(self):
-    for pvdKey, pvd in self.pvds.items():
-      self.__removePvd(pvd.phyIfaceName, pvd.pvdId)
+    # create a deep copy of dictionary keys before deletion because Python cannot delete dictionary items while iterating over them
+    pvdKeys = [key for key in self.pvds.keys()]
+    for (phyIfaceName, pvdId) in pvdKeys:
+      self.__removePvd(phyIfaceName, pvdId)
