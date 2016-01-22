@@ -11,7 +11,7 @@ from pyroute2 import IPRoute
 from pyroute2 import IPDB
 
 # initialize logger
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.DEBUG,
                     format='[%(asctime)s] [%(module)s] %(levelname)s: %(message)s')
 LOG = logging.getLogger(__name__)
 
@@ -50,6 +50,7 @@ class PvdManager:
 
   __NETNS_DEFAULT_PROC = '/proc/1/ns/net'
   __NETNS_DEFAULT_NAME = 'mifpvd-default'
+
   
   '''
   PRIVATE METHODS
@@ -203,21 +204,40 @@ class PvdManager:
       # get interface MAC address to derive the IPv6 address from
       iface = ip.get_links(ifaceIndex)[0]
       mac = iface.get_attr('IFLA_ADDRESS')
+
+      # add IPv6 addresses
       if (pvdInfo.prefixes):
         for prefix in pvdInfo.prefixes:
-          # TODO: PrefixInfo should contain IPAddress instead of str
+          # TODO: PrefixInfo should contain IPAddress instead of str for prefix
           ipAddress = str(netaddr.EUI(mac).ipv6(netaddr.IPAddress(prefix.prefix)))
           ip.addr('add', index=ifaceIndex, address=ipAddress, prefixlen=prefix.prefixLength, family=socket.AF_INET6)
           LOG.debug('IP address {0}/{1} on {2} configured'.format(ipAddress, prefix.prefixLength, ifaceName))
 
+      # add routes
       if (pvdInfo.routes):
         for route in pvdInfo.routes:
           # some routes may be added during interface prefix configuration, skip them if already there
           try:
-            ip.route('add', dst=route.prefix, mask=route.prefixLength, oif=ifaceIndex, rtproto='RTPROT_STATIC', rtscope='RT_SCOPE_LINK', family=socket.AF_INET6)
-            LOG.debug('route {0}/{1} on {2} configured'.format(route.prefix, route.prefixLength, ifaceName))
+            # TODO: RouteInfo should contain IPAddress instead of str for prefix
+            # TODO: PvdInfo should contain IPAddress instead of str for routerAddress
+            ip.route('add', dst=route.prefix, mask=route.prefixLength, gateway=pvdInfo.routerAddress, oif=ifaceIndex, rtproto='RTPROT_STATIC', rtscope='RT_SCOPE_LINK', family=socket.AF_INET6)
+            LOG.debug('route to {0}/{1} via {2} on {3} configured'.format(route.prefix, route.prefixLength, pvdInfo.routerAddress, ifaceName))
           except:
             pass
+
+      # add link-local route
+      try:
+        ip.route('add', dst='fe80::', mask=64, oif=ifaceIndex, rtproto='RTPROT_STATIC', rtscope='RT_SCOPE_LINK', family=socket.AF_INET6)
+        LOG.debug('link-local route via on {0} configured'.format(ifaceName))
+      except:
+        pass
+
+      # add default route
+      try:
+        ip.route('add', dst='::', gateway=pvdInfo.routerAddress, oif=ifaceIndex, rtproto='RTPROT_STATIC', rtscope='RT_SCOPE_LINK', family=socket.AF_INET6)
+        LOG.debug('default route via {0} on {1} configured'.format(pvdInfo.routerAddress, ifaceName))
+      except:
+        pass
 
 
   def __configureDns(self, pvdInfo, netnsName):
