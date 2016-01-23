@@ -50,7 +50,7 @@ class PvdManager:
 
   __NETNS_DEFAULT_PROC = '/proc/1/ns/net'
   __NETNS_DEFAULT_NAME = 'mifpvd-default'
-  
+
   '''
   PRIVATE METHODS
   '''
@@ -96,8 +96,8 @@ class PvdManager:
       self.__netnsIdGenerator += 1;
       netnsName = self.__NETNS_PREFIX + str(self.__netnsIdGenerator)
     return netnsName
-    
-    
+
+
   def __getPvdIfaceName(self):
     pvdIfaceName = None
     while (not pvdIfaceName or len(self.ipRoot.link_lookup(ifname=pvdIfaceName)) > 0):
@@ -150,7 +150,7 @@ class PvdManager:
     pvdIfaceIndex = self.ipRoot.link_lookup(ifname=pvdIfaceName)
     self.ipRoot.link('set', index=pvdIfaceIndex[0], net_ns_fd=netnsName)
     LOG.debug('macvlan {0} moved to network namespace {1}'.format(pvdIfaceName, netnsName))
-    
+
     # change the namespace and get new NETLINK handles to operate in new namespace
     netns.setns(netnsName)
     LOG.debug('network namespace switched to {0}'.format(netnsName))
@@ -243,7 +243,7 @@ class PvdManager:
         if (pvdInfo.dnssls):
           for dnssl in pvdInfo.dnssls:
             if (dnssl.domainNames):
-              dnsConfFile.write('search ' + ' '.join('{}'.format(domainName) for domainName in dnssl.domainNames))      
+              dnsConfFile.write('search ' + ' '.join('{}'.format(domainName) for domainName in dnssl.domainNames))
           LOG.debug('DNSSL in {0} configured'.format(dnsConfFile))
 
 
@@ -279,7 +279,7 @@ class PvdManager:
         # if any of the PvD parameters has changed, reconfigure the PvD
         netns.setns(pvd.netnsName)
         ip = IPRoute()
-        # return to a default network namespace to not cause a colision with other modules  
+        # return to a default network namespace to not cause a colision with other modules
         # ip handle continues to work in the target network namespace
         netns.setns(self.__NETNS_DEFAULT_NAME)
         self.__configureNetwork(pvd.pvdIfaceName, pvdInfo, ip)
@@ -328,12 +328,19 @@ class PvdManager:
 
   def removePvd(self, phyIfaceName, pvdId):
     self.__removePvd(phyIfaceName, pvdId)
-    
+
 
   def listPvds(self):
     pvdData = []
     for pvdKey, pvd in self.pvds.items():
       pvdData.append((pvd.phyIfaceName, pvd.pvdId))
+    return pvdData
+
+
+  def getPvds(self):
+    pvdData = []
+    for pvdKey, pvd in self.pvds.items():
+      pvdData.append((pvd.pvdId, pvd.netnsName, pvd.phyIfaceName))
     return pvdData
 
 

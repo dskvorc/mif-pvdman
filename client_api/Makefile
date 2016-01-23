@@ -4,7 +4,7 @@ LIBPATH = -L./
 LIB = pvd
 FIXME = `pkg-config --cflags --libs gobject-2.0 glib-2.0 gio-2.0`
 
-CFLAGS = $(INCLUDE)
+CFLAGS = -Wall $(INCLUDE)
 LDFLAGS = $(LIBPATH) -l$(LIB)
 
 # Required library
