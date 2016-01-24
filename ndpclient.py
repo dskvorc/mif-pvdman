@@ -74,7 +74,7 @@ class NDPClient:
 						# elif pvd_opt['type'] == NdpMsg.OPT_ABRO:
 						#	abros.append ( pvd_opt['ABROInfo'] )
 
-					pvdInfo = pvdinfo.PvdInfo ( pvdId, mtu, prefixes,
+					pvdInfo = pvdinfo.PvdInfo ( pvdId, msg.src, mtu, prefixes,
 								routes, rdnsses, dnssls, lowpancontexts, abros )
 					pvdinfos.append ( ( msg.iface, pvdInfo ) )
 
