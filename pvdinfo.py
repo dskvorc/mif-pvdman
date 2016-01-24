@@ -132,14 +132,14 @@ class ABROInfo:
 
 class PvdInfo:
   # TODO: extend the __init__ argument list with routerAddress when ndpclient.py gets updated
-  def __init__(self, pvdId, mtu, prefixes, routes, rdnsses, dnssls, lowpancontexts, abros):
+  def __init__(self, pvdId, routerAddress, mtu, prefixes, routes, rdnsses, dnssls, lowpancontexts, abros):
     # UUID
     self.pvdId = pvdId
     # netaddr.IPAddress
     # TODO: remove mock-up addresses when ndpclient.py gets updated
-    #self.routerAddress = routerAddress
+    self.routerAddress = routerAddress
     #self.routerAddress = 'fe80::20c:29ff:fee7:16ce' # radvd
-    self.routerAddress = 'fe80::ca4c:75ff:fe6a:9740' # VM host
+    #self.routerAddress = 'fe80::ca4c:75ff:fe6a:9740' # VM host
     # MTUInfo
     self.mtu = mtu
     # [] of ***Info
