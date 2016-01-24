@@ -6,9 +6,12 @@
 #include <unistd.h>
 #include <pvd_api.h>
 
-int main ()
+/* usage: example [pvd-id [command-to-execute [parameters]]] */
+
+int main ( int argc, char *argv[] )
 {
 	int i = 0;
+	char *pvd_id;
 
 	printf ( "Requesting all (*):\n" );
 	struct pvd **pvd = pvd_get_by_id ( "*" );
@@ -22,7 +25,11 @@ int main ()
 	}
 	free(pvd);
 
-	char pvd_id[] = "pvd-id-wired-1";
+	if ( argc > 1 )
+		pvd_id = argv[1];
+	else
+		pvd_id = "pvd-id-wired-1";
+
 	printf ( "Requesting pvd_id: %s:\n", pvd_id );
 	pvd = pvd_get_by_id ( pvd_id );
 	for (i = 0; pvd[i] != NULL; i++ ) {
@@ -37,10 +44,27 @@ int main ()
 	}
 	free(pvd);
 
-	if ( pvd_activate ( pvd_id, getpid() ) != -1 )
-		printf ( "pvd %s activated!\n", pvd_id );
-	else
+	printf ( "Activating pvd: %s:\n", pvd_id );
+	if ( pvd_activate ( pvd_id, getpid() ) == -1 ) {
 		printf ( "pvd %s activation error!\n", pvd_id );
+		return -1;
+	}
+	printf ( "pvd %s activated!\n", pvd_id );
+
+	if ( argc > 2 ) {
+		char *args[argc-1];
+		printf ( "Executing: " );
+		for ( i = 0; i < argc-1; i++ ) {
+			args[i] = argv[i+2];
+			if ( args[i] )
+				printf ( "%s ", args[i] );
+		}
+		printf ( "\n" );
+		args[argc-1] = NULL;
+		execvp ( args[0], args );
+		perror ( "Error executing execvp" );
+		return -1;
+	}
 
 	return 0;
 }
