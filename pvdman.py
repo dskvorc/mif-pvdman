@@ -314,6 +314,17 @@ class PvdManager:
   def __removePvd(self, phyIfaceName, pvdId):
     pvd = self.pvds.get((phyIfaceName, pvdId))
     if (pvd):
+      # remove interfaces added to namespace (FIXME)
+      '''
+      netns.setns(pvd.netnsName)
+      ip = IPRoute()
+      ifaceIndex = ip.link_lookup(ifname=pvd.pvdIfaceName)
+      print(ifaceIndex)
+      if (len(ifaceIndex) > 0):
+        ifaceIndex = ifaceIndex[0]
+      ip.link_remove(ifaceIndex)
+      netns.setns(self.__NETNS_DEFAULT_NAME)
+      '''
       # remove the network namespace associated with the PvD (this in turn removes the PvD network configuration as well)
       if (pvd.netnsName in netns.listnetns()):
         netns.remove(pvd.netnsName)
