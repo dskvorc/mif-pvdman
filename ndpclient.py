@@ -4,8 +4,14 @@
 # formated with tab=4 spaces long (not replaced with spaces)
 
 import socket, select, struct, sys, binascii
-import pyroute2, ipaddress
+import pyroute2, ipaddress, logging, hashlib, uuid
 import pvdinfo
+
+# initialize logger
+logging.basicConfig(level=logging.DEBUG,
+format='%(asctime)s %(filename)s:%(lineno)d %(levelname)s %(name)s - %(message)s')
+LOG = logging.getLogger(__name__)
+
 
 class NDPClient:
 	def __init__ ( self, iface = None, lla = None ):
@@ -28,69 +34,89 @@ class NDPClient:
 	def get_pvdinfo ( self, timeout = 0 ):
 		'''If got information from RA pack them into PvdInfo class'''
 		msg = self.recvmsg ( timeout )
-		if not msg:
+		if not msg or msg.Type != NdpMsg.TYPE_RA:
 			return None
-		else:
-			# create PvdInfo structs from received RA
-			pvdinfos = []
 
-			# Do we have PVD_CO option?
-			for opt in msg.options:
-				if opt['type'] == NdpMsg.OPT_PVD_CO:
-					pvdId = None
-					mtu = None
-					prefixes = []
-					routes = []
-					rdnsses = []
-					dnssls = []
-					lowpancontexts = []
-					abros = []
-					for pvd_opt in opt['options']:
-						if pvd_opt['type'] == NdpMsg.OPT_PVD_ID:
-							if pvdId:
-								# error, already have pvdId
-								return None
-							else:
-								pvdId = pvd_opt['pvdId']
+		# create PvdInfo structs from received RA
+		pvdinfos = []
 
-						elif pvd_opt['type'] == NdpMsg.OPT_MTU:
-							mtu = pvd_opt['MTUInfo']
+		# create implicit pvd info
+		# pvdId = "implicit"
+		( pvdId, mtu, prefixes, routes, rdnsses, dnssls ) = \
+			NDPClient.__prepare_options_for_pvd ( msg.options )
+		# which elements must be present for implicit pvd to be created? TODO
+		pvdId = NDPClient.__create_uuid ( mtu, prefixes, routes, rdnsses, dnssls )
+		LOG.debug ( "Adding implicit pvd: " + str(pvdId) )
+		pvdInfo = pvdinfo.PvdInfo ( pvdId, msg.src, mtu, prefixes,
+							routes, rdnsses, dnssls, [], [] )
+		pvdinfos.append ( ( msg.iface, pvdInfo ) )
 
-						elif pvd_opt['type'] == NdpMsg.OPT_PREFIX:
-							prefixes.append ( pvd_opt['PrefixInfo'] )
+		# Do we have PVD_CO option?
+		for opt in msg.options:
+			if opt['type'] == NdpMsg.OPT_PVD_CO:
+				( pvdId, mtu, prefixes, routes, rdnsses, dnssls ) = \
+					NDPClient.__prepare_options_for_pvd ( opt['options'] )
 
-						elif pvd_opt['type'] == NdpMsg.OPT_ROUTE:
-							routes.append ( pvd_opt['RouteInfo'] )
+				LOG.debug ( "Adding pvd: " + str(pvdId) )
+				pvdInfo = pvdinfo.PvdInfo ( pvdId, msg.src, mtu, prefixes,
+							routes, rdnsses, dnssls, [], [] )
+				pvdinfos.append ( ( msg.iface, pvdInfo ) )
 
-						elif pvd_opt['type'] == NdpMsg.OPT_RDNSS:
-							rdnsses.append ( pvd_opt['RDNSSInfo'] )
+		return pvdinfos
 
-						elif pvd_opt['type'] == NdpMsg.OPT_DNSSL:
-							dnssls.append ( pvd_opt['DNSSLInfo'] )
+	@staticmethod
+	def __prepare_options_for_pvd ( options ):
+		pvdId = None
+		mtu = None
+		prefixes = []
+		routes = []
+		rdnsses = []
+		dnssls = []
+		for pvd_opt in options:
+			if pvd_opt['type'] == NdpMsg.OPT_PVD_ID:
+				pvdId = pvd_opt['pvdId']
 
-						# Not implemented:
-						# elif pvd_opt['type'] == NdpMsg.OPT_LoWPANContext:
-						#	lowpancontexts.append ( pvd_opt['LoWPANContextInfo'] )
-						# elif pvd_opt['type'] == NdpMsg.OPT_ABRO:
-						#	abros.append ( pvd_opt['ABROInfo'] )
+			elif pvd_opt['type'] == NdpMsg.OPT_MTU:
+				mtu = pvd_opt['MTUInfo']
 
-					pvdInfo = pvdinfo.PvdInfo ( pvdId, msg.src, mtu, prefixes,
-								routes, rdnsses, dnssls, lowpancontexts, abros )
-					pvdinfos.append ( ( msg.iface, pvdInfo ) )
+			elif pvd_opt['type'] == NdpMsg.OPT_PREFIX:
+				prefixes.append ( pvd_opt['PrefixInfo'] )
 
-			if not pvdinfos:
-				# create implicit pvd info?
-				# pvdId = "implicit"
-				pass
+			elif pvd_opt['type'] == NdpMsg.OPT_ROUTE:
+				routes.append ( pvd_opt['RouteInfo'] )
 
-			return pvdinfos
+			elif pvd_opt['type'] == NdpMsg.OPT_RDNSS:
+				rdnsses.append ( pvd_opt['RDNSSInfo'] )
+
+			elif pvd_opt['type'] == NdpMsg.OPT_DNSSL:
+				dnssls.append ( pvd_opt['DNSSLInfo'] )
+
+		return ( pvdId, mtu, prefixes, routes, rdnsses, dnssls )
+
+	@staticmethod
+	def __create_uuid ( mtu, prefixes, routes, rdnsses, dnssls ):
+		data = str(mtu)
+		for prefix in prefixes:
+			data += prefix.prefix
+		for route in routes:
+			data += route.prefix
+		for rdn in rdnsses:
+			for address in rdn.addresses:
+				data += address
+		for dns in dnssls:
+			for domain in dns.domainNames:
+				data += domain
+		digest = hashlib.sha1 ( data.encode('utf-8') ).digest()
+		return str ( uuid.UUID ( bytes = digest[:16] ) )
 
 	def send_rs ( self, pvdId = None, iface = None, src = None, dest = None ):
 		'''Send Router-Solicitation message'''
 		_iface = iface or self.iface
 		if not _iface:
 			# error, or should RS be sent to all interfaces by default?
-			raise Exception('Interface must be provided!')
+			LOG.error("Interface must be provided for RS!")
+			return None
+
 		_src = src or self.__lla
 		if not _src:
 			# get ip address from interface with pyroute2
@@ -104,7 +130,8 @@ class NDPClient:
 							_src = a['address']
 							break
 			if not _src:
-				raise Exception('Source address must be provided!')
+				LOG.error("Source address must be provided!")
+				return None
 
 		msg = NdpMsg.create_rs ( src = _src, dest = dest, pvdId = pvdId, iface = _iface )
 		addr = ( msg.dest, 0, 0, socket.if_nametoindex(_iface) )
@@ -128,7 +155,8 @@ class NDPClient:
 				dest = socket.inet_ntop ( socket.AF_INET6, cmsg_data[:-4] )
 				iface_id = int.from_bytes(cmsg_data[-4:], byteorder=sys.byteorder)
 				break
-		print("RA received through interface " + str(iface_id) )
+
+		LOG.debug("RA received through interface " + str(iface_id))
 		iface = socket.if_indextoname(iface_id)
 		return NdpMsg.from_packet ( packet, src, dest, iface )
 
@@ -160,8 +188,8 @@ class NdpMsg: # rfc4861
 	def from_packet ( cls, packet, src, dest, iface ):
 		if not packet or not src or not dest:
 			return None
-		if cls.__checksum ( src, dest, len(packet), 58, packet ) != 0xffff:
-			# error in checksum
+		if NdpMsg.__checksum ( src, dest, len(packet), 58, packet ) != 0xffff:
+			LOG.error("Checksum error")
 			return None
 		msg = cls ( src, dest, iface )
 		msg.packet = packet
@@ -179,14 +207,21 @@ class NdpMsg: # rfc4861
 			if len(packet) > 8:
 				options = packet[8:]
 		else:
-			return #Not ndp packet of type: RA or RS!
-		msg.__unpack_options ( msg.options, options )
-		return msg
+			LOG.debug("Received NDP packet isn't RA/RS")
+			return None
+		if NdpMsg.__unpack_options ( msg.options, options ):
+			return msg
+		else:
+			return None
 
-	def __unpack_options ( self, save_to, options ):
+	@staticmethod
+	def __unpack_options ( save_to, options, encapsulated = False ):
 		''' Unpack options from raw form 'options' to list 'save_to' '''
 		# each unpacked options have: type, len, raw 'data' and formated data
 		# which is named per option type (e.g. for OPT_MTU => name is 'mtu')
+
+		have_pvd_id = False # used only for encapsulated options within OPT_PVD_CO
+
 		while options:
 			opt={}
 			opt['type'] = options[0]
@@ -195,8 +230,10 @@ class NdpMsg: # rfc4861
 			options = options[opt['len']*8:]
 			if opt['type'] == NdpMsg.OPT_SRC_LLA:
 				opt['src_lla'] = opt['data']
+
 			elif opt['type'] == NdpMsg.OPT_TARG_LLA:
 				opt['targ_lla'] = opt['data']
+
 			elif opt['type'] == NdpMsg.OPT_PREFIX:
 				opt['PrefixInfo'] = pvdinfo.PrefixInfo (
 					opt['data'][0],
@@ -206,11 +243,17 @@ class NdpMsg: # rfc4861
 					struct.unpack("!I", opt['data'][6:10])[0],
 					socket.inet_ntop ( socket.AF_INET6, opt['data'][14:])
 				)
+
 			elif opt['type'] == NdpMsg.OPT_REDIRECT:
 				pass # don't process this option (for now)
+
 			elif opt['type'] == NdpMsg.OPT_MTU:
 				opt['MTUInfo'] = MTUInfo ( struct.unpack("!I", opt['data'][2:6]) )
+
 			elif opt['type'] == NdpMsg.OPT_PVD_CO:
+				if encapsulated:
+					LOG.error("Container inside container")
+					return False
 				opt['S'] = ( (opt['data'][0] & 0x80 ) != 0 )
 				opt['Name_Type'] = opt['data'][1]
 				if opt['S']:
@@ -221,9 +264,16 @@ class NdpMsg: # rfc4861
 				else:
 					container = opt['data'][6:]
 				opt['options'] = []
-				self.__unpack_options ( opt['options'], container )
+				if not NdpMsg.__unpack_options ( opt['options'], container, True ):
+					return False
+
 			elif opt['type'] == NdpMsg.OPT_PVD_ID:
+				if encapsulated and have_pvd_id:
+					LOG.error("Multiple PVD_ID inside single container")
+					return False
+				have_pvd_id = True
 				opt['pvdId'] = (opt['data'][2:]).decode("utf-8")
+
 			elif opt['type'] == NdpMsg.OPT_ROUTE:
 				opt['RouteInfo'] = pvdinfo.RouteInfo (
 					opt['data'][0], #prefixLength
@@ -231,6 +281,7 @@ class NdpMsg: # rfc4861
 					struct.unpack("!I", opt['data'][2:6])[0], # routeLifetime
 					socket.inet_ntop ( socket.AF_INET6, opt['data'][6:]) # prefix
 				)
+
 			elif opt['type'] == NdpMsg.OPT_RDNSS:
 				lifetime = struct.unpack("!I", opt['data'][2:6])[0]
 				addresses = []
@@ -239,6 +290,7 @@ class NdpMsg: # rfc4861
 					addresses.append ( socket.inet_ntop ( socket.AF_INET6, addr[:16] ) )
 					addr = addr[16:]
 				opt['RDNSSInfo'] = pvdinfo.RDNSSInfo ( lifetime, addresses )
+
 			elif opt['type'] == NdpMsg.OPT_DNSSL:
 				lifetime = struct.unpack("!I", opt['data'][2:6])[0]
 				domains = []
@@ -253,10 +305,13 @@ class NdpMsg: # rfc4861
 					if d and d[0] == 0:
 						d = d[1:]
 				opt['DNSSLInfo'] = pvdinfo.DNSSLInfo ( lifetime, domains )
+
 			else:
 				#don't process unknown options
 				pass
 			save_to.append(opt)
+
+		return True
 
 	@classmethod
 	def create_rs ( cls, src, dest = None, pvdId = None, iface = None ):
@@ -289,7 +344,7 @@ class NdpMsg: # rfc4861
 				msg.packet += pvdId_opt
 				msg.options.append ( { 'type':NdpMsg.OPT_PVD_ID, 'len':opt_len, 'data':pvdId_opt, 'pvdId':pvd } )
 
-		chks = msg.__checksum ( msg.src, msg.dest, len(msg.packet), 58, msg.packet )
+		chks = NdpMsg.__checksum ( msg.src, msg.dest, len(msg.packet), 58, msg.packet )
 		msg.packet = msg.packet[0:2] + struct.pack ( "!H", chks ) + msg.packet[4:]
 		return msg
 
@@ -324,10 +379,11 @@ class NdpMsg: # rfc4861
 			s += "\n\tReachable Time:" + str(self.Reachable_Time)
 			s += "\n\tRetrans Timer:" + str(self.Retrans_Timer)
 			s += "\n\tRouter Lifetime:" + str(self.Router_Lifetime)
-		s += self.__dump_options ( self.options )
+		s += NdpMsg.__dump_options ( self.options )
 		return s
 
-	def __dump_options ( self, options ):
+	@staticmethod
+	def __dump_options ( options ):
 		s = ""
 		for opt in options:
 			s += "\n\toption: "
@@ -351,7 +407,7 @@ class NdpMsg: # rfc4861
 				s += "OPT_MTU " + str(opt['MTUInfo'].mtu)
 			elif opt['type'] == NdpMsg.OPT_PVD_CO:
 				s += "OPT_PVD_CO start >>>>>>>>>>>>>>>>>>>>>>>>>>>>>" + "\n\t\t"
-				s += self.__dump_options ( opt['options'] )
+				s += NdpMsg.__dump_options ( opt['options'] )
 				s += "\n\toption: OPT_PVD_CO end <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<" + "\n"
 			elif opt['type'] == NdpMsg.OPT_ROUTE:
 				s += "OPT_ROUTE " + "\n\t\t"
