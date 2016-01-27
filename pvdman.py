@@ -51,6 +51,10 @@ class PvdManager:
   __NETNS_DEFAULT_PROC = '/proc/1/ns/net'
   __NETNS_DEFAULT_NAME = 'mifpvd-default'
 
+  __DEFAULT_ROUTE_PREFIX = '::'
+  __LINK_LOCAL_PREFIX = 'fe80::'
+  __LINK_LOCAL_PREFIX_LENGTH = 64
+
   '''
   PRIVATE METHODS
   '''
@@ -204,7 +208,12 @@ class PvdManager:
       iface = ip.get_links(ifaceIndex)[0]
       mac = iface.get_attr('IFLA_ADDRESS')
 
-      # add IPv6 addresses
+      # add link-local IPv6 address
+      ipAddress = str(netaddr.EUI(mac).ipv6(netaddr.IPAddress(self.__LINK_LOCAL_PREFIX)))
+      ip.addr('add', index=ifaceIndex, address=ipAddress, prefixlen=self.__LINK_LOCAL_PREFIX_LENGTH, family=socket.AF_INET6)
+      LOG.debug('link-local IP address {0}/{1} on {2} configured'.format(ipAddress, self.__LINK_LOCAL_PREFIX_LENGTH, ifaceName))
+
+      # add PvD-related IPv6 addresses
       if (pvdInfo.prefixes):
         for prefix in pvdInfo.prefixes:
           # TODO: PrefixInfo should contain IPAddress instead of str for prefix
@@ -226,14 +235,14 @@ class PvdManager:
 
       # add link-local route
       try:
-        ip.route('add', dst='fe80::', mask=64, oif=ifaceIndex, rtproto='RTPROT_STATIC', rtscope='RT_SCOPE_LINK', family=socket.AF_INET6)
-        LOG.debug('link-local route via on {0} configured'.format(ifaceName))
+        ip.route('add', dst=self.__LINK_LOCAL_PREFIX, mask=self.__LINK_LOCAL_PREFIX_LENGTH, oif=ifaceIndex, rtproto='RTPROT_STATIC', rtscope='RT_SCOPE_LINK', family=socket.AF_INET6)
+        LOG.debug('link-local route to {0}/{1} on {2} configured'.format(self.__LINK_LOCAL_PREFIX, self.__LINK_LOCAL_PREFIX_LENGTH, ifaceName))
       except:
         pass
 
       # add default route
       try:
-        ip.route('add', dst='::', gateway=pvdInfo.routerAddress, oif=ifaceIndex, rtproto='RTPROT_STATIC', rtscope='RT_SCOPE_LINK', family=socket.AF_INET6)
+        ip.route('add', dst=self.__DEFAULT_ROUTE_PREFIX, gateway=pvdInfo.routerAddress, oif=ifaceIndex, rtproto='RTPROT_STATIC', rtscope='RT_SCOPE_LINK', family=socket.AF_INET6)
         LOG.debug('default route via {0} on {1} configured'.format(pvdInfo.routerAddress, ifaceName))
       except:
         pass
@@ -280,7 +289,7 @@ class PvdManager:
         self.__configureDns(pvdInfo, netnsName)
         # if PvD configuration completed successfully, add PvD record to the PvD manager's log
         self.pvds[(phyIfaceName, pvd.pvdId)] = pvd
-        LOG.info('PvD {0} received through {1} CONFIGURED in network namespace {2} on macvlan {3}'.format(pvd.pvdId, pvd.phyIfaceName, pvd.netnsName, pvd.pvdIfaceName))
+        LOG.info('PvD {0} received through {1} CONFIGURED in network namespace {2} on macvlan {3}, type {4}'.format(pvd.pvdId, pvd.phyIfaceName, pvd.netnsName, pvd.pvdIfaceName, pvd.pvdInfo.pvdType))
       else:
         raise Exception('PvD duplicate error: PvD {0} is already configured on {1}'.format(pvdInfo.pvdId, phyIfaceName))
     else:
@@ -293,7 +302,7 @@ class PvdManager:
       if (pvd.pvdInfo == pvdInfo):
         # if PvD parameters did not change, just update the timestamp in the PvD manager's log
         pvd.updateTimestamp()
-        LOG.info('PvD {0} received through {1} UNCHANGED, timestamp UPDATED'.format(pvd.pvdId, pvd.phyIfaceName))
+        LOG.info('PvD {0} received through {1} UNCHANGED, timestamp UPDATED, type {2}'.format(pvd.pvdId, pvd.phyIfaceName, pvd.pvdInfo.pvdType))
       else:
         # if any of the PvD parameters has changed, reconfigure the PvD
         netns.setns(pvd.netnsName)
@@ -306,7 +315,7 @@ class PvdManager:
         # update the PvD record in the PvD manager's log
         pvd.pvdInfo = pvdInfo
         pvd.updateTimestamp()
-        LOG.info('PvD {0} received through {1} RECONFIGURED in network namespace {2} on macvlan {3}'.format(pvd.pvdId, pvd.phyIfaceName, pvd.netnsName, pvd.pvdIfaceName))
+        LOG.info('PvD {0} received through {1} RECONFIGURED in network namespace {2} on macvlan {3}, type {4}'.format(pvd.pvdId, pvd.phyIfaceName, pvd.netnsName, pvd.pvdIfaceName, pvd.pvdInfo.pvdType))
     else:
       raise Exception('There is no PvD {0} configured on {1}'.format(pvdInfo.pvdId, phyIfaceName))
 
@@ -334,7 +343,7 @@ class PvdManager:
         shutil.rmtree(dnsConfDir, True)
       # remove the PvD record from the PvD manager's log
       del self.pvds[(phyIfaceName, pvdId)]
-      LOG.info('PvD {0} received through {1} REMOVED, network namespace {2} deleted, DNS directory {3} deleted'.format(pvd.pvdId, pvd.phyIfaceName, pvd.netnsName, dnsConfDir))
+      LOG.info('PvD {0} received through {1} REMOVED, network namespace {2} deleted, DNS directory {3} deleted, type {4}'.format(pvd.pvdId, pvd.phyIfaceName, pvd.netnsName, dnsConfDir, pvd.pvdInfo.pvdType))
     else:
       raise Exception('There is no PvD {0} configured on {1}'.format(pvdInfo.pvdId, phyIfaceName))
 
