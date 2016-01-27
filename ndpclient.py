@@ -47,8 +47,8 @@ class NDPClient:
 		# which elements must be present for implicit pvd to be created? TODO
 		pvdId = NDPClient.__create_uuid ( mtu, prefixes, routes, rdnsses, dnssls )
 		LOG.debug ( "Adding implicit pvd: " + str(pvdId) )
-		pvdInfo = pvdinfo.PvdInfo ( pvdId, msg.src, mtu, prefixes,
-							routes, rdnsses, dnssls, [], [] )
+		pvdInfo = pvdinfo.PvdInfo ( pvdId, pvdinfo.PvdType.IMPLICIT, msg.src,
+							mtu, prefixes, routes, rdnsses, dnssls, [], [] )
 		pvdinfos.append ( ( msg.iface, pvdInfo ) )
 
 		# Do we have PVD_CO option?
@@ -58,8 +58,8 @@ class NDPClient:
 					NDPClient.__prepare_options_for_pvd ( opt['options'] )
 
 				LOG.debug ( "Adding pvd: " + str(pvdId) )
-				pvdInfo = pvdinfo.PvdInfo ( pvdId, msg.src, mtu, prefixes,
-							routes, rdnsses, dnssls, [], [] )
+				pvdInfo = pvdinfo.PvdInfo ( pvdId, pvdinfo.PvdType.EXPLICIT,
+					msg.src, mtu, prefixes, routes, rdnsses, dnssls, [], [] )
 				pvdinfos.append ( ( msg.iface, pvdInfo ) )
 
 		return pvdinfos
