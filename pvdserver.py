@@ -55,6 +55,11 @@ class PvdApiServer ( dbus.service.Object ):
 
 		return p
 
+	@dbus.service.signal('org.freedesktop.PvDManager')
+	def stateChanged ( self, message ):
+		# call it like self.stateChanged ( pvd_id ) # id of pvd which changed
+		# TODO
+		pass
 
 
 # for test only! (included from main.py)

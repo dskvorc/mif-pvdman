@@ -13,13 +13,25 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-
 #include <pvd_api.h>
 
-#define  BUS_NAME			"org.freedesktop.PvDManager"
-#define  OBJECT_PATH		"/org/freedesktop/PvDManager"
-#define  INTERFACE_NAME		"org.freedesktop.PvDManager"
-#define  NSFILEBASEDIR		"/var/run/netns/"
+#define  BUS_NAME       "org.freedesktop.PvDManager"
+#define  OBJECT_PATH    "/org/freedesktop/PvDManager"
+#define  INTERFACE_NAME "org.freedesktop.PvDManager"
+#define  NSFILEBASEDIR  "/var/run/netns/"
+
+static GDBusConnection *connect ()
+{
+	GDBusConnection *connection;
+	GError *error = NULL;
+	connection = g_bus_get_sync ( G_BUS_TYPE_SYSTEM, NULL, &error );
+	if ( connection == NULL )
+	{
+		g_printerr ("Error connecting to D-Bus: %s\n", error->message);
+		g_error_free (error);
+	}
+	return connection;
+}
 
 GVariant *pvd_call_method ( char *method_name, GVariant *params, const GVariantType *ret_type )
 {
@@ -27,14 +39,9 @@ GVariant *pvd_call_method ( char *method_name, GVariant *params, const GVariantT
 	GError *error;
 	GVariant *value;
 
-	error = NULL;
-	connection = g_bus_get_sync ( G_BUS_TYPE_SYSTEM, NULL, &error );
-	if (connection == NULL)
-	{
-		g_printerr ("Error connecting to D-Bus: %s\n", error->message);
-		g_error_free (error);
+	connection = connect ();
+	if ( connection == NULL )
 		return NULL;
-	}
 
 	error = NULL;
 	value = g_dbus_connection_call_sync (
@@ -62,7 +69,7 @@ struct pvd **pvd_get_by_id ( const char *pvd_id )
 	int pvds = 0;
 
 	value = pvd_call_method ( "get_by_id", g_variant_new ("(s)", pvd_id),
-							  G_VARIANT_TYPE ("(a(sss))") );
+		G_VARIANT_TYPE ("(a(sss))") );
 	if (!value)
 		return NULL;
 
@@ -94,8 +101,8 @@ int pvd_activate ( const char *pvd_id, pid_t pid )
 
 	/* 1. retrieve given pvd */
 	value = pvd_call_method ( "activate",
-							  g_variant_new ("(si)", pvd_id, (gint) pid ),
-							  G_VARIANT_TYPE ("(sss)") );
+		g_variant_new ("(si)", pvd_id, (gint) pid ),
+		G_VARIANT_TYPE ("(sss)") );
 	if (!value)
 		return retval;
 
@@ -120,3 +127,36 @@ int pvd_activate ( const char *pvd_id, pid_t pid )
 
 	return retval;
 }
+
+/* not tested! */
+static void _callback ( GDBusConnection *connection,
+	const gchar *sender_name, const gchar *object_path,
+	const gchar *interface_name, const gchar *signal_name,
+	GVariant *parameters, gpointer callback )
+{
+	GVariant *value;
+	const gchar *id;
+	void (*cb)(char *);
+
+	cb = callback;
+	g_variant_get ( value, "(&s)", &id );
+
+	if ( cb )
+		cb ( (char*) id );
+}
+
+int pvd_register_signal ( void (*callback) ( char *pvd_id ) )
+{
+	GDBusConnection *connection;
+	guint si;
+
+	connection = connect ();
+	if ( connection == NULL )
+		return -1;
+
+	si = g_dbus_connection_signal_subscribe ( connection, NULL, INTERFACE_NAME,
+		NULL, OBJECT_PATH, NULL, G_DBUS_CALL_FLAGS_NONE, _callback, callback, NULL );
+	return si;
+}
+
+
