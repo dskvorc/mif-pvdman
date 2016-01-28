@@ -46,14 +46,20 @@ class PvdManager:
   __netnsIdGenerator = 0;
   __PVD_IFACE_PREFIX = 'mifpvd-'
   __pvdIfaceIdGenerator = 0;
-  __DNS_CONF_FILE = '/etc/netns/%NETNS_NAME%/resolv.conf'
+  __PVD_IFACE_TYPE = 'macvlan'
+
+  __NETNSDIRNAME_REPLACE_PATTERN = '%NETNS_NAME%'
+  __DNS_CONF_FILE = '/etc/netns/' + __NETNSDIRNAME_REPLACE_PATTERN + '/resolv.conf'
+
+  __LOOPBACK_IFACE_NAME = 'lo'
 
   __NETNS_DEFAULT_PROC = '/proc/1/ns/net'
   __NETNS_DEFAULT_NAME = 'mifpvd-default'
 
-  __DEFAULT_ROUTE_PREFIX = '::'
+  __DEFAULT_ROUTE_ADDRESS = '::'
   __LINK_LOCAL_PREFIX = 'fe80::'
   __LINK_LOCAL_PREFIX_LENGTH = 64
+
 
   '''
   PRIVATE METHODS
@@ -111,7 +117,7 @@ class PvdManager:
 
 
   def __getDnsConfPath(self, netnsName):
-    dnsConfFile = self.__DNS_CONF_FILE.replace('%NETNS_NAME%', netnsName)
+    dnsConfFile = self.__DNS_CONF_FILE.replace(self.__NETNSDIRNAME_REPLACE_PATTERN, netnsName)
     dnsConfDir = dnsConfFile[0:dnsConfFile.rfind('/')]
     return (dnsConfDir, dnsConfFile)
 
@@ -149,7 +155,7 @@ class PvdManager:
     LOG.debug('network namespace {0} created'.format(netnsName))
 
     # create a virtual interface where PvD parameters are going to be configured, then move the interface to the new network namespace
-    self.ipRoot.link_create(ifname=pvdIfaceName, kind='macvlan', link=phyIfaceIndex)
+    self.ipRoot.link_create(ifname=pvdIfaceName, kind=self.__PVD_IFACE_TYPE, link=phyIfaceIndex)
     LOG.debug('macvlan {0} created in default network namespace'.format(pvdIfaceName))
     pvdIfaceIndex = self.ipRoot.link_lookup(ifname=pvdIfaceName)
     self.ipRoot.link('set', index=pvdIfaceIndex[0], net_ns_fd=netnsName)
@@ -167,7 +173,7 @@ class PvdManager:
     LOG.debug('network namespace switched to default')
 
     # get new index since interface has been moved to a different namespace
-    loIfaceIndex = ip.link_lookup(ifname='lo')
+    loIfaceIndex = ip.link_lookup(ifname=self.__LOOPBACK_IFACE_NAME)
     if (len(loIfaceIndex) > 0):
       loIfaceIndex = loIfaceIndex[0]
     pvdIfaceIndex = ip.link_lookup(ifname=pvdIfaceName)
@@ -210,7 +216,7 @@ class PvdManager:
 
       # add link-local IPv6 address
       ipAddress = str(netaddr.EUI(mac).ipv6(netaddr.IPAddress(self.__LINK_LOCAL_PREFIX)))
-      ip.addr('add', index=ifaceIndex, address=ipAddress, prefixlen=self.__LINK_LOCAL_PREFIX_LENGTH, family=socket.AF_INET6)
+      ip.addr('add', index=ifaceIndex, address=ipAddress, prefixlen=self.__LINK_LOCAL_PREFIX_LENGTH, rtproto='RTPROT_RA', family=socket.AF_INET6)
       LOG.debug('link-local IP address {0}/{1} on {2} configured'.format(ipAddress, self.__LINK_LOCAL_PREFIX_LENGTH, ifaceName))
 
       # add PvD-related IPv6 addresses
@@ -218,34 +224,34 @@ class PvdManager:
         for prefix in pvdInfo.prefixes:
           # TODO: PrefixInfo should contain IPAddress instead of str for prefix
           ipAddress = str(netaddr.EUI(mac).ipv6(netaddr.IPAddress(prefix.prefix)))
-          ip.addr('add', index=ifaceIndex, address=ipAddress, prefixlen=prefix.prefixLength, family=socket.AF_INET6)
+          ip.addr('add', index=ifaceIndex, address=ipAddress, prefixlen=prefix.prefixLength, rtproto='RTPROT_RA', family=socket.AF_INET6)
           LOG.debug('IP address {0}/{1} on {2} configured'.format(ipAddress, prefix.prefixLength, ifaceName))
 
-      # add routes
+      # add PvD-related routes
       if (pvdInfo.routes):
         for route in pvdInfo.routes:
           # some routes may be added during interface prefix configuration, skip them if already there
           try:
             # TODO: RouteInfo should contain IPAddress instead of str for prefix
             # TODO: PvdInfo should contain IPAddress instead of str for routerAddress
-            ip.route('add', dst=route.prefix, mask=route.prefixLength, gateway=pvdInfo.routerAddress, oif=ifaceIndex, rtproto='RTPROT_STATIC', rtscope='RT_SCOPE_LINK', family=socket.AF_INET6)
+            ip.route('add', dst=route.prefix, mask=route.prefixLength, gateway=pvdInfo.routerAddress, oif=ifaceIndex, rtproto='RTPROT_RA', family=socket.AF_INET6)
             LOG.debug('route to {0}/{1} via {2} on {3} configured'.format(route.prefix, route.prefixLength, pvdInfo.routerAddress, ifaceName))
           except:
-            pass
+            LOG.warning('cannot configure route to {0}/{1} via {2} on {3}'.format(route.prefix, route.prefixLength, pvdInfo.routerAddress, ifaceName))
 
       # add link-local route
       try:
-        ip.route('add', dst=self.__LINK_LOCAL_PREFIX, mask=self.__LINK_LOCAL_PREFIX_LENGTH, oif=ifaceIndex, rtproto='RTPROT_STATIC', rtscope='RT_SCOPE_LINK', family=socket.AF_INET6)
+        ip.route('add', dst=self.__LINK_LOCAL_PREFIX, mask=self.__LINK_LOCAL_PREFIX_LENGTH, oif=ifaceIndex, rtproto='RTPROT_RA', family=socket.AF_INET6)
         LOG.debug('link-local route to {0}/{1} on {2} configured'.format(self.__LINK_LOCAL_PREFIX, self.__LINK_LOCAL_PREFIX_LENGTH, ifaceName))
       except:
-        pass
+        LOG.warning('cannot configure link-local route to {0}/{1} on {2}'.format(self.__LINK_LOCAL_PREFIX, self.__LINK_LOCAL_PREFIX_LENGTH, ifaceName))
 
       # add default route
       try:
-        ip.route('add', dst=self.__DEFAULT_ROUTE_PREFIX, gateway=pvdInfo.routerAddress, oif=ifaceIndex, rtproto='RTPROT_STATIC', rtscope='RT_SCOPE_LINK', family=socket.AF_INET6)
+        ip.route('add', dst=self.__DEFAULT_ROUTE_ADDRESS, gateway=pvdInfo.routerAddress, oif=ifaceIndex, rtproto='RTPROT_RA', family=socket.AF_INET6)
         LOG.debug('default route via {0} on {1} configured'.format(pvdInfo.routerAddress, ifaceName))
       except:
-        pass
+        LOG.warning('cannot configure default route via {0} on {1}'.format(pvdInfo.routerAddress, ifaceName))
 
 
   def __configureDns(self, pvdInfo, netnsName):
@@ -323,17 +329,6 @@ class PvdManager:
   def __removePvd(self, phyIfaceName, pvdId):
     pvd = self.pvds.get((phyIfaceName, pvdId))
     if (pvd):
-      # remove interfaces added to namespace (FIXME)
-      '''
-      netns.setns(pvd.netnsName)
-      ip = IPRoute()
-      ifaceIndex = ip.link_lookup(ifname=pvd.pvdIfaceName)
-      print(ifaceIndex)
-      if (len(ifaceIndex) > 0):
-        ifaceIndex = ifaceIndex[0]
-      ip.link_remove(ifaceIndex)
-      netns.setns(self.__NETNS_DEFAULT_NAME)
-      '''
       # remove the network namespace associated with the PvD (this in turn removes the PvD network configuration as well)
       if (pvd.netnsName in netns.listnetns()):
         netns.remove(pvd.netnsName)
