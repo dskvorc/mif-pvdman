@@ -167,6 +167,8 @@ class PvdManager:
     ip = IPRoute()
     ipdb = IPDB()
     ipdb.register_callback(self.__onIfaceStateChange)
+    with open("/proc/sys/net/ipv6/conf/"+pvdIfaceName+"/accept_ra", 'w') as fp:
+        fp.write("0")
     # return to a default network namespace to not cause a colision with other modules
     # ip and ipdb handles continue to work in the target network namespace
     netns.setns(self.__NETNS_DEFAULT_NAME)
