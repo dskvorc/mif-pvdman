@@ -17,7 +17,7 @@ int main ( int argc, char *argv[] )
 	struct pvd **pvd = pvd_get_by_id ( "*" );
 
 	for (i = 0; pvd[i] != NULL; i++ ) {
-		printf ("id:%s ns:%s iface:%s\n", pvd[i]->id, pvd[i]->ns, pvd[i]->iface );
+		printf ("id: %s ns:%s iface:%s\n", pvd[i]->id, pvd[i]->ns, pvd[i]->iface );
 		free(pvd[i]->id);
 		free(pvd[i]->ns);
 		free(pvd[i]->iface);
