@@ -44,12 +44,14 @@ class Pvd:
 class PvdManager:
   __NETNS_PREFIX = 'mifpvd-'
   __netnsIdGenerator = 0;
-  __PVD_IFACE_PREFIX = 'mifpvd-'
-  __pvdIfaceIdGenerator = 0;
+  __PVD_IFACE_BASENAME = 'mifpvd'
   __PVD_IFACE_TYPE = 'macvlan'
 
   __NETNSDIRNAME_REPLACE_PATTERN = '%NETNS_NAME%'
   __DNS_CONF_FILE = '/etc/netns/' + __NETNSDIRNAME_REPLACE_PATTERN + '/resolv.conf'
+
+  __IFACENAME_REPLACE_PATTERN = '%IFACE_NAME%'
+  __ACCEPT_RA_CONF_FILE = '/proc/sys/net/ipv6/conf/' + __IFACENAME_REPLACE_PATTERN + '/accept_ra'
 
   __LOOPBACK_IFACE_NAME = 'lo'
 
@@ -108,12 +110,20 @@ class PvdManager:
     return netnsName
 
 
-  def __getPvdIfaceName(self):
-    pvdIfaceName = None
-    while (not pvdIfaceName or len(self.ipRoot.link_lookup(ifname=pvdIfaceName)) > 0):
-      self.__pvdIfaceIdGenerator += 1;
-      pvdIfaceName = self.__PVD_IFACE_PREFIX + str(self.__pvdIfaceIdGenerator)
-    return pvdIfaceName
+  def __getPvdIfaceParams(self):
+    # use interface base name if available, add suffix otherwise
+    pvdIfaceName = self.__PVD_IFACE_BASENAME
+    pvdIfaceSuffix = 0
+    while (len(self.ipRoot.link_lookup(ifname=pvdIfaceName)) > 0):
+      pvdIfaceSuffix += 1;
+      pvdIfaceName = self.__PVD_IFACE_BASENAME + '-' + str(pvdIfaceSuffix)
+    # find the largest index among the existing interfaces, use the next one
+    pvdIfaceIndex = 1
+    existingIfaceIndices = [iface['index'] for iface in self.ipRoot.get_links()]
+    if (len(existingIfaceIndices) > 0):
+      existingIfaceIndices.sort()
+      pvdIfaceIndex = existingIfaceIndices[-1] + 1
+    return (pvdIfaceName, pvdIfaceIndex)
 
 
   def __getDnsConfPath(self, netnsName):
@@ -150,12 +160,12 @@ class PvdManager:
 
   def __createNetns(self, phyIfaceIndex):
     netnsName = self.__getNetnsName()
-    pvdIfaceName = self.__getPvdIfaceName()
+    (pvdIfaceName, pvdIfaceIndex) = self.__getPvdIfaceParams()
     netns.create(netnsName)
     LOG.debug('network namespace {0} created'.format(netnsName))
 
     # create a virtual interface where PvD parameters are going to be configured, then move the interface to the new network namespace
-    self.ipRoot.link_create(ifname=pvdIfaceName, kind=self.__PVD_IFACE_TYPE, link=phyIfaceIndex)
+    self.ipRoot.link_create(ifname=pvdIfaceName, index=pvdIfaceIndex, kind=self.__PVD_IFACE_TYPE, link=phyIfaceIndex)
     LOG.debug('macvlan {0} created in default network namespace'.format(pvdIfaceName))
     pvdIfaceIndex = self.ipRoot.link_lookup(ifname=pvdIfaceName)
     self.ipRoot.link('set', index=pvdIfaceIndex[0], net_ns_fd=netnsName)
@@ -167,8 +177,11 @@ class PvdManager:
     ip = IPRoute()
     ipdb = IPDB()
     ipdb.register_callback(self.__onIfaceStateChange)
-    with open("/proc/sys/net/ipv6/conf/"+pvdIfaceName+"/accept_ra", 'w') as fp:
-        fp.write("0")
+    # disable kernel to auto-configure the interface associated with the PvD, let the pvdman to solely control interface configuration
+    acceptRaConfFile = self.__ACCEPT_RA_CONF_FILE.replace(self.__IFACENAME_REPLACE_PATTERN, pvdIfaceName)
+    acceptRaConfFile = open(acceptRaConfFile, 'w')
+    acceptRaConfFile.write('0')
+    LOG.debug('processing of RAs by kernel disabled in {0}'.format(acceptRaConfFile.name))
     # return to a default network namespace to not cause a colision with other modules
     # ip and ipdb handles continue to work in the target network namespace
     netns.setns(self.__NETNS_DEFAULT_NAME)
@@ -274,13 +287,13 @@ class PvdManager:
           for rdnss in pvdInfo.rdnsses:
             if (rdnss.addresses):
               dnsConfFile.write('\n'.join('{} {}'.format('nameserver', address) for address in rdnss.addresses) + '\n\n')
-          LOG.debug('RDNSS in {0} configured'.format(dnsConfFile))
+          LOG.debug('RDNSS in {0} configured'.format(dnsConfFile.name))
 
         if (pvdInfo.dnssls):
           for dnssl in pvdInfo.dnssls:
             if (dnssl.domainNames):
               dnsConfFile.write('search ' + ' '.join('{}'.format(domainName) for domainName in dnssl.domainNames))
-          LOG.debug('DNSSL in {0} configured'.format(dnsConfFile))
+          LOG.debug('DNSSL in {0} configured'.format(dnsConfFile.name))
 
 
   def __createPvd(self, phyIfaceName, pvdInfo):
