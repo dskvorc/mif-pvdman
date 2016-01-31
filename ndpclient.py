@@ -53,7 +53,7 @@ class NDPClient:
 		pvd_properties = None
 		if prop:
 			for p in prop:
-				if p["PVD_ID"] == "implicit":
+				if p["id"] == "implicit":
 					pvd_properties = p
 					break
 
@@ -71,7 +71,7 @@ class NDPClient:
 				pvd_properties = None
 				if prop:
 					for p in prop:
-						if p["PVD_ID"] == pvdId:
+						if p["id"] == pvdId:
 							pvd_properties = p
 							break
 

@@ -74,7 +74,6 @@ class PvdApiServer ( dbus.service.Object ):
 		''' application request specific pvd information, or list of pvds '''
 		# properties is a json string defining required properties
 		props = json.loads(properties)
-
 		pvds = self.__get_pvds ()
 
 		# filter pvds: remove ones that don't satisfy criteria
@@ -83,7 +82,7 @@ class PvdApiServer ( dbus.service.Object ):
 			for prop in props:
 				val = pvd_props.get(prop)
 				# if not => use default values: TODO
-				if not val or val not in props[prop]:
+				if not val or props[prop] not in val:
 					pvds.remove(pvd)
 
 		# sort pvds by properties: TODO

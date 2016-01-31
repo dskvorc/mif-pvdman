@@ -101,7 +101,7 @@ struct pvd **pvd_get_by_properties ( const char *props )
 	struct pvd **list = NULL;
 	int pvds = 0;
 
-	value = pvd_call_method ( "get_by_id", g_variant_new ("(s)", props),
+	value = pvd_call_method ( "get_by_properties", g_variant_new ("(s)", props),
 		G_VARIANT_TYPE ("(a(ssss))") );
 	if (!value)
 		return NULL;
@@ -154,8 +154,8 @@ int pvd_activate ( const char *pvd_id, pid_t pid )
 			if ( retval == -1 )
 				perror("setns");
 		}
-		printf ( "nsname=%s fd=%d setns=%d\n", nsname, fd, retval );
-		printf ( "properties=%s\n", properties );
+		//printf ( "nsname=%s fd=%d setns=%d\n", nsname, fd, retval );
+		//printf ( "properties=%s\n", properties );
 	}
 
 	g_variant_unref (value);
