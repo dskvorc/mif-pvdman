@@ -16,11 +16,13 @@ int main ( int argc, char *argv[] )
 	printf ( "Requesting all (*):\n" );
 	struct pvd **pvd = pvd_get_by_id ( "*" );
 
-	for (i = 0; pvd[i] != NULL; i++ ) {
+	for (i = 0; pvd[i] != NULL; i++) {
 		printf ("id: %s ns:%s iface:%s\n", pvd[i]->id, pvd[i]->ns, pvd[i]->iface );
+		printf ("properties: %s\n\n", pvd[i]->properties );
 		free(pvd[i]->id);
 		free(pvd[i]->ns);
 		free(pvd[i]->iface);
+		free(pvd[i]->properties);
 		free(pvd[i]);
 	}
 	free(pvd);
@@ -37,6 +39,7 @@ int main ( int argc, char *argv[] )
 			printf ("No such pvd!\n" );
 		else
 			printf ("id:%s ns:%s iface:%s\n", pvd[i]->id, pvd[i]->ns, pvd[i]->iface );
+			printf ("properties: %s\n\n", pvd[i]->properties );
 		free(pvd[i]->id);
 		free(pvd[i]->ns);
 		free(pvd[i]->iface);

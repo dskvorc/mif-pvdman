@@ -149,7 +149,8 @@ class ABROInfo:
 
 
 class PvdInfo:
-  def __init__(self, pvdId, pvdType, routerAddress, mtu, prefixes, routes, rdnsses, dnssls, lowpancontexts, abros):
+  def __init__(self, pvdId, pvdType, routerAddress, mtu, prefixes, routes, \
+	  rdnsses, dnssls, lowpancontexts, abros, pvd_properties ):
     # UUID
     self.pvdId = pvdId
     # options are: PvdType.UNKNOWN, PvdType.IMPLICIT, PvdType.EXPLICIT
@@ -165,6 +166,7 @@ class PvdInfo:
     self.dnssls = dnssls
     self.lowpancontexts = lowpancontexts
     self.abros = abros
+    self.pvd_properties = pvd_properties
 
   def __eq__(self, other):
     return (self.pvdId == other.pvdId and

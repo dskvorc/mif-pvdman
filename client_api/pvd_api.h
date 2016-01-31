@@ -4,6 +4,7 @@ struct pvd {
 	char *id;
 	char *ns;
 	char *iface;
+	char *properties;
 };
 
 struct pvd **pvd_get_by_id ( const char *pvd_id );

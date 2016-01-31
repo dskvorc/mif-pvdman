@@ -3,7 +3,7 @@
 
 # formated with tab=4 spaces long (not replaced with spaces)
 
-import socket, select, struct, sys, binascii
+import socket, select, struct, sys, binascii, json
 import pyroute2, ipaddress, logging, hashlib, uuid
 import pvdinfo
 
@@ -37,6 +37,10 @@ class NDPClient:
 		if not msg or msg.Type != NdpMsg.TYPE_RA:
 			return None
 
+		# get additional PVD parameters from router
+		prop = self.__get_pvd_description ( msg.src, msg.iface )
+		#print(prop)
+
 		# create PvdInfo structs from received RA
 		pvdinfos = []
 
@@ -46,9 +50,16 @@ class NDPClient:
 			NDPClient.__prepare_options_for_pvd ( msg.options )
 		# which elements must be present for implicit pvd to be created? TODO
 		pvdId = NDPClient.__create_uuid ( mtu, prefixes, routes, rdnsses, dnssls )
+		pvd_properties = None
+		if prop:
+			for p in prop:
+				if p["PVD_ID"] == "implicit":
+					pvd_properties = p
+					break
+
 		LOG.debug ( "Adding implicit pvd: " + str(pvdId) )
 		pvdInfo = pvdinfo.PvdInfo ( pvdId, pvdinfo.PvdType.IMPLICIT, msg.src,
-							mtu, prefixes, routes, rdnsses, dnssls, [], [] )
+				mtu, prefixes, routes, rdnsses, dnssls, [], [], pvd_properties )
 		pvdinfos.append ( ( msg.iface, pvdInfo ) )
 
 		# Do we have PVD_CO option?
@@ -57,12 +68,32 @@ class NDPClient:
 				( pvdId, mtu, prefixes, routes, rdnsses, dnssls ) = \
 					NDPClient.__prepare_options_for_pvd ( opt['options'] )
 
+				pvd_properties = None
+				if prop:
+					for p in prop:
+						if p["PVD_ID"] == pvdId:
+							pvd_properties = p
+							break
+
 				LOG.debug ( "Adding pvd: " + str(pvdId) )
 				pvdInfo = pvdinfo.PvdInfo ( pvdId, pvdinfo.PvdType.EXPLICIT,
-					msg.src, mtu, prefixes, routes, rdnsses, dnssls, [], [] )
+					msg.src, mtu, prefixes, routes, rdnsses, dnssls, [], [],
+					pvd_properties )
 				pvdinfos.append ( ( msg.iface, pvdInfo ) )
 
 		return pvdinfos
+
+	@staticmethod
+	def __get_pvd_description ( src, from_iface ):
+		try:
+			addrinfo = socket.getaddrinfo(src+"%"+from_iface, 8080, 0, socket.SOCK_STREAM)
+			(family, socktype, proto, canonname, sockaddr) = addrinfo[0]
+			s = socket.socket(family, socktype, proto)
+			s.connect(sockaddr)
+			s.send(b'GET /pvd-info.json\r\n\r\n')
+			return json.loads(s.recv(10240).decode("utf-8") )
+		except:
+			return None
 
 	@staticmethod
 	def __prepare_options_for_pvd ( options ):
@@ -156,7 +187,7 @@ class NDPClient:
 				iface_id = int.from_bytes(cmsg_data[-4:], byteorder=sys.byteorder)
 				break
 
-		LOG.debug("RA received through interface " + str(iface_id))
+		#LOG.debug("NDP packet received through interface " + str(iface_id))
 		iface = socket.if_indextoname(iface_id)
 		return NdpMsg.from_packet ( packet, src, dest, iface )
 
@@ -207,7 +238,7 @@ class NdpMsg: # rfc4861
 			if len(packet) > 8:
 				options = packet[8:]
 		else:
-			LOG.debug("Received NDP packet isn't RA/RS")
+			#LOG.debug("`	")
 			return None
 		if NdpMsg.__unpack_options ( msg.options, options ):
 			return msg

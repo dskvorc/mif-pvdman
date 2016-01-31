@@ -64,23 +64,57 @@ struct pvd **pvd_get_by_id ( const char *pvd_id )
 {
 	GVariant *value;
 	GVariantIter *iter;
-	const gchar *id, *ns, *iface;
+	const gchar *id, *ns, *iface, *properties;
 	struct pvd **list = NULL;
 	int pvds = 0;
 
 	value = pvd_call_method ( "get_by_id", g_variant_new ("(s)", pvd_id),
-		G_VARIANT_TYPE ("(a(sss))") );
+		G_VARIANT_TYPE ("(a(ssss))") );
 	if (!value)
 		return NULL;
 
-	g_variant_get ( value, "(a(sss))", &iter);
-	while ( g_variant_iter_loop ( iter, "(&s&s&s)", &id, &ns, &iface ) ) {
+	g_variant_get ( value, "(a(ssss))", &iter);
+	while ( g_variant_iter_loop ( iter, "(&s&s&s&s)", &id, &ns, &iface, &properties ) ) {
 		//g_print ("id:%s ns:%s if:%s\n", id, ns, iface );
 		list = realloc ( list, sizeof(struct pvd *)*(pvds+1) );
 		list[pvds] = malloc ( sizeof(struct pvd) );
 		list[pvds]->id = strdup ( id );
 		list[pvds]->ns = strdup ( ns );
 		list[pvds]->iface = strdup ( iface );
+		list[pvds]->properties = strdup ( properties );
+		pvds++;
+	}
+	g_variant_iter_free (iter);
+	g_variant_unref (value);
+
+	list = realloc ( list, sizeof(struct pvd *)*(pvds+1) );
+	list[pvds] = NULL;
+
+	return list;
+}
+
+struct pvd **pvd_get_by_properties ( const char *props )
+{
+	GVariant *value;
+	GVariantIter *iter;
+	const gchar *id, *ns, *iface, *properties;
+	struct pvd **list = NULL;
+	int pvds = 0;
+
+	value = pvd_call_method ( "get_by_id", g_variant_new ("(s)", props),
+		G_VARIANT_TYPE ("(a(ssss))") );
+	if (!value)
+		return NULL;
+
+	g_variant_get ( value, "(a(ssss))", &iter);
+	while ( g_variant_iter_loop ( iter, "(&s&s&s&s)", &id, &ns, &iface, &properties ) ) {
+		//g_print ("id:%s ns:%s if:%s\n", id, ns, iface );
+		list = realloc ( list, sizeof(struct pvd *)*(pvds+1) );
+		list[pvds] = malloc ( sizeof(struct pvd) );
+		list[pvds]->id = strdup ( id );
+		list[pvds]->ns = strdup ( ns );
+		list[pvds]->iface = strdup ( iface );
+		list[pvds]->properties = strdup ( properties );
 		pvds++;
 	}
 	g_variant_iter_free (iter);
@@ -95,18 +129,18 @@ struct pvd **pvd_get_by_id ( const char *pvd_id )
 int pvd_activate ( const char *pvd_id, pid_t pid )
 {
 	GVariant *value;
-	const gchar *id, *ns, *iface;
+	const gchar *id, *ns, *iface, *properties;
 	int retval = -1;
 
 
 	/* 1. retrieve given pvd */
 	value = pvd_call_method ( "activate",
 		g_variant_new ("(si)", pvd_id, (gint) pid ),
-		G_VARIANT_TYPE ("(sss)") );
+		G_VARIANT_TYPE ("(ssss)") );
 	if (!value)
 		return retval;
 
-	g_variant_get ( value, "(&s&s&s)", &id, &ns, &iface );
+	g_variant_get ( value, "(&s&s&s&s)", &id, &ns, &iface, &properties );
 	//g_print ("id:%s ns:%s if:%s\n", id, ns, iface );
 
 	/* 2. if exist, activate it: switch to that namespace */
@@ -121,6 +155,7 @@ int pvd_activate ( const char *pvd_id, pid_t pid )
 				perror("setns");
 		}
 		printf ( "nsname=%s fd=%d setns=%d\n", nsname, fd, retval );
+		printf ( "properties=%s\n", properties );
 	}
 
 	g_variant_unref (value);
