@@ -1,48 +1,110 @@
 PvD architecture overview / implementation details
 ===================================================
-This document describes partial provisioning domain component (MIF-PvD)
-implementation from: https://github.com/dskvorc/mif-pvdman
+This document describes a proof-of-concept implementation of provisioning domain
+(PvD) aware client-side network management component (MIF-pvdman). The source
+code is available at https://github.com/dskvorc/mif-pvdman.
 
-Overview
----------
-MIF-PvD does not interfere with regular network behavior: all services and
-settings network manager uses aren't changed. PvDs are implemented through
-namespaces, thus only those newly created namespaces and their network settings
-are managed by MIF-PvD. (MIF-PvD is orthogonal to existing system.)
+Contents
+--------
+1. Architecture Overview and Implementation Details
+2. Description of Test Environment
+3. Setup Instructions
 
-MIF-PvD creates PvD for each received coherent PvD information set.
-Currently only router advertisement messages (RAs) are used (1).
-PvD is implemented by namespaces: each PvD has its own namespace with single
-interface (besides loopback) of macvlan type, connected to physical interface
-on which related PvD information came (where RA containing them arrived) (2).
-Each created interface is assigned an IPv6 address (or more of them), as per
-PvD information provided (3).
+1. Architecture Overview and Implementation Details
+---------------------------------------------------
+MIF-pvdman is a client-side component for IPv6 network auto-configuration based
+on multiple provisioning domains (PvDs), as described in RFC 6418 and RFC 7556
+(https://tools.ietf.org/html/rfc6418, https://tools.ietf.org/html/rfc7556).
+MIF-pvdman is orthogonal to existing system, which means it does not interfere
+with regular network behavior: none of the services and settings used by Network
+Manager and similar components are not changed nor affected.
 
-PvD aware client application uses pvd_api to get list of PvDs, and activate
-chosen PvD. Dbus is used to connect to PvD service on localhost.
-On PvD activation, client is switched to PvD's namespace and further network
-operation application performs are in that namespace (4).
+PvDs are implemented through Linux network namespaces. For each coherent PvD
+information set received on the network interface, MIF-pvdman creates a separate
+network namespace and configures received network parameters within that
+namespace. Since each network namespace uses separate IP stack which is isolated
+from other namespaces, potentially conflicting network parameters received from
+different network providers can safely coexist on a single host. MIF-pvdman
+manages only those newly created namespaces associated with the PvDs and their
+network settings and leaves the default network namespace intact. That way, all
+the existing network management components, such as Network Manager, continue to
+work unobtrusively.
 
-Non-PvD aware clients operate as before. The can be forced to run within some
-PvD by starting it with command: ip netns exec <pvd-name> <command with args>
+MIF-pvdman receives network configurations through Router Advertisement messages
+(RAs). Modified version of PvD-aware radvd is used (1). Each RA may contain one
+or more network configurations which are classified either as explicit or
+implicit PvDs. Explicit PvD is a set of coherent NDP options explicitly labeled
+with a unique PvD identifier and nested within a special NDP option called PVD
+container, as described in draft-ietf-mif-mpvd-ndp-support-02
+(https://tools.ietf.org/html/draft-ietf-mif-mpvd-ndp-support-02). Multiple
+explicit PvDs may appear in a single RA, each within a different PvD container
+option, as long as they are labeled with different PvD identifiers. Implicit PvD
+is just another name for top-level NDP options placed outside the PvD container
+option, as in regular non-PvD-aware router advertisements. Since implicit PvDs
+are not labeled with PvD identifier, MIF-pvdman automatically generates an
+identifier for internal use and configures the implicit PvD on the host in the
+same way as if it was the explicit one. Only one implicit PvD is allowed per RA.
+In current prototype, UUID is used as a PvD identifier.
 
-(1) Modified PvD aware radvd service is used
+Each PvD, either explicit or implicit, is associated with a network namespace
+with a single virtual network interface (besides the loopback) of macvlan type,
+where PvD-related network parameters are configured. To establish a connectivity
+to the outside world, virtual interface is connected to the physical interface
+on which the related PvD information is received through the RA (2). Each
+virtual interface is assigned a link-local IPv6 address (fe80::/64) and one or
+more addresses derived from Prefix Information options if present in the
+received RA (3). Besides the IP addresses, MIF-pvdman configures the routing
+tables and DNS records within the namespace. By default, a link-local and
+default route via the RA-announcing router are added to the routing table,
+regardless of the routing information received in RA. Additional routing
+information is configured if Route Information options are received in RA.
+Finally, for each RDNSS and DNSSL option received in RA, MIF-pvdman creates a
+record in /etc/netns/NETNS_NAME/resolv.conf, where NETNS_NAME is a name of the
+network namespace associated with the PvD.
+
+PvD-aware client application uses PvD API to get a list of available PvDs
+configured on the local host, and activate chosen PvD to use it for
+communication. Information about configured PvDs are exposed to applications by
+a special PvD service running on local host. D-Bus is used to connect
+applications to PvD service. Upon PvD activation, client application is switched
+to the network namespace associated with the selected PvD. Further network
+operations (socket creation, sending and receiving data) are performed within
+that namespace (4). Once obtained by the application, socket handles are linked
+to the network namespace they were originally obtained from and continue to work
+in that namespace, regardles of whether the application switches to another
+namespace at some time later. This enables the application to use multiple PvDs
+simultaneously. The only requirement is that the application is running within a
+proper network namespace while obtaining a socket.
+
+Non-PvD aware clients operate as before. Although they are not able to use PvD
+API to select a certain PvD, they can still be forced to use a specific PvD by
+starting them in a network namespace associated with that PvD. To run a program
+within a given namespace, it should be started with:
+
+    ip netns exec <pvd-namespace-name> <command with args>
+
+(1) Modified PvD-aware radvd service is used
     https://github.com/dskvorc/mif-radvd
-(2) Possibility (maybe): if more PvDs should be combined for some reason,
-    maybe more interfaces could be created and put in same namespace.
+(2) Possibility for future extensions: if multiple PvDs should be grouped
+    together for some reason, more virtual interfaces could be created per
+    network namespace.
 (3) Possibility (maybe/to be tested): maybe same IP address could be used in
     different PvDs (namespaces/interfaces) if they have different gateway
     (assuming kernel can forward received IP packet based on that).
-(4) Problem: changing namespace requires root privileges. Until some solution
-    is found, applications are run as root.
+(4) Problem: changing network namespace requires root privileges. Until more
+    appropriate solution is found, applications are run as root.
 
 
-Implementation details (development/testing environment)
---------------------------------------------------------
-Two virtual machines (Fedora 23, Ubuntu 14.04 tested) in VMware Player.
+2. Description of Test Environment
+----------------------------------
+Prototype system implementation described above is implemented and tested on
+Linux/Fedora 23 and Linux/Ubuntu 14.04. Test environment consists of two
+machines, one being a router running radvd, while another being a regular host
+running MIF-pvdman and client applications. In our experiments, we used two
+virtual machines hosted in VMware Player.
 
 Services on router:
-- radvd PvD aware NDP server:
+- radvd (PvD-aware NDP server):
   * https://github.com/dskvorc/mif-radvd
   * configurations from: https://github.com/dskvorc/mif-pvdman/tree/master/conf
 - DNS server (optional, to be configured)
@@ -80,17 +142,20 @@ Application API:
   * copy/paste pvd-id from printed list (when executed just as ./example)
 
 
-Test case 1
-------------
-Simulate two routers and web server behind each. With two explicit PvD-s this
-example demonstrates that from first PvD only first web server is reachable and
-that from second PvD only second web server is reachable.
+Test Case
+---------
+Network environment consists of a client connected to two routers, each of them
+having a web server behind. Web server 1 is only reachable through router 1,
+while web server 2 is only reachable through router 2. Each router advertises
+one PvD. Client receives network configuration from two PvDs and configures both
+of them, but should carefully select the proper one to access a particular web
+server.
 
 Simulated environment:
 +-----------+              +-----------+          +-----------+
 |           |              |           |          |           |
 |           |              |           |          |    web    |
-|  client   +--O----+---O--+   router  |--O----O--|   server  |
+|  client   +--o----+---o--+   router  |--o----o--|   server  |
 |           |       |      |     1     |          |     1     |
 |           |       |      |           |          |           |
 +-----------+       |      +-----------+          +-----------+
@@ -98,27 +163,31 @@ Simulated environment:
                     |      +-----------+          +-----------+
                     |      |           |          |           |
                     |      |           |          |    web    |
-                    +---O--+   router  |--O----O--|   server  |
+                    +---o--+   router  |--o----o--|   server  |
                            |     2     |          |     2     |
        Figure 1            |           |          |           |
                            +-----------+          +-----------+
 
 
-Real test environment (2):
+Real test environment:
+Test environment consists of two virtual machines running on a single host. One
+virtual machine behaves like a client, while another one simulates both routers
+and web servers using separate network interfaces (router 1 + web server 1 on
+eth1, router 2 + web server 2 on eth2).
 
-      O eth0                eth0 O
-      |                          |
-+-----+-----+              +-----+-----+
-|           |         eth1 |           |
-|           | eth1   +--O--+           |
-|  client   +--O-----+     |   router  |
-|           |        +--O--+           |
-|           |         eth2 |           |
-+-----------+              +-----------+
+      o eth0                  eth0 o
+      |                            |
++-----+-----+              +-------+------+
+|           |         eth1 |              |
+|    VM1    | eth1   +--o--+     VM2      |
+| (client)  +--o-----+     | (routers +   |
+|           |        +--o--+ web servers) |
+|           |         eth2 |              |
++-----------+              +--------------+
                 Figure 2
 
 Router settings:
------------------
+----------------
 Addresses: (eth0 used for Internet access on both virtual machines)
 router-eth1: local link + 2001:db8:1::1/64, 2001:db8:2::1/64
 router-eth2: local link + 2001:db8:3::1/64, 2001:db8:4::1/64
@@ -151,12 +220,9 @@ sudo ip6tables -A INPUT -6 -i eth2 -d 2001:db8:2::1 -j DROP
 (when packet arrive on wrong interface ignore it)
 
 Client settings:
------------------
-Physical interfaces not managed by MIF-PvD
-IP addresses on virtual devices set per PvD information by MIF-PvD.
-To disable kernel involvement in created namespaces when processing incoming RAs
-zero must be written to:
-/proc/sys/net/ipv6/conf/<virtual interface name>/accept_ra
+----------------
+Physical interfaces are not managed by MIF-pvdman.
+IP addresses on virtual devices set per PvD information by MIF-pvdman.
 
 All RAs arrive on eth1 => virtual devices (macvlan) created for namespaces are
 bound to this interface (therefore @if3 suffix on virtual interface).
@@ -172,11 +238,12 @@ $ sudo ./example 4176b877-e8be-8242-9540-6ea13a3a1d60 ip a
 
 Test results
 -------------
-PvDs + IP addresses generated by pvdman for each namespace:
-4176b877-e8be-8242-9540-6ea13a3a1d60 ns:mifpvd-3 iface:eth1 2001:db8:1:0:c0fa:bbff:febc:5c49
-f037ea62-ee4f-44e4-825c-16f2f5cc9b3f ns:mifpvd-4 iface:eth1 2001:db8:2:0:dce8:1fff:fe21:8d4a
-cf44e119-7e3f-e302-549b-82a9c6fd6210 ns:mifpvd-1 iface:eth1 2001:db8:3:0:2880:68ff:fe8d:add0
-f037ea62-ee4f-44e4-825c-16f2f5cc9b3e ns:mifpvd-2 iface:eth1 2001:db8:4:0:38f5:32ff:fe4f:d50a
+PvD configurations generated by MIF-pvdman:
+PvD ID                                netns     iface  IP address
+4176b877-e8be-8242-9540-6ea13a3a1d60  mifpvd-3  eth1   2001:db8:1:0:c0fa:bbff:febc:5c49
+f037ea62-ee4f-44e4-825c-16f2f5cc9b3f  mifpvd-4  eth1   2001:db8:2:0:dce8:1fff:fe21:8d4a
+cf44e119-7e3f-e302-549b-82a9c6fd6210  mifpvd-1  eth1   2001:db8:3:0:2880:68ff:fe8d:add0
+f037ea62-ee4f-44e4-825c-16f2f5cc9b3e  mifpvd-2  eth1   2001:db8:4:0:38f5:32ff:fe4f:d50a
 
 sudo ./example 4176b877-e8be-8242-9540-6ea13a3a1d60 wget http://[2001:db8:2::1]:80
 OK (index.html saved: WWW1)
@@ -195,4 +262,3 @@ sudo ./example cf44e119-7e3f-e302-549b-82a9c6fd6210 wget http://[2001:db8:4::1]:
 OK (index.html saved: WWW2)
 sudo ./example f037ea62-ee4f-44e4-825c-16f2f5cc9b3e wget http://[2001:db8:4::1]:80
 OK (index.html saved: WWW2)
-
