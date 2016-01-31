@@ -74,10 +74,7 @@ Application API:
 - API is used to select "current" PvD: all next network related operations
   will use that PvD (unless they were initialized before, in different PvD)
   until different PvD is selected
-- test application client_api/example.c retrieves all PvDs from MIF-PvD, select
-  PvD with Id given on command line, and executes given command in that PvD
-  * usage: sudo ./example [pvd-id [some command with parameters]]
-  * copy/paste pvd-id from printed list (when executed just as ./example)
+- test applications in client_api/tests/
 
 
 Test case 1
@@ -161,7 +158,7 @@ zero must be written to:
 All RAs arrive on eth1 => virtual devices (macvlan) created for namespaces are
 bound to this interface (therefore @if3 suffix on virtual interface).
 Example "ip a":
-$ sudo ./example 4176b877-e8be-8242-9540-6ea13a3a1d60 ip a
+$ sudo ./pvd_run 4176b877-e8be-8242-9540-6ea13a3a1d60 ip a
 [cut]
 4: mifpvd@if3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN group default
     link/ether c2:fa:bb:bc:5c:49 brd ff:ff:ff:ff:ff:ff link-netnsid 0
@@ -178,21 +175,21 @@ f037ea62-ee4f-44e4-825c-16f2f5cc9b3f ns:mifpvd-4 iface:eth1 2001:db8:2:0:dce8:1f
 cf44e119-7e3f-e302-549b-82a9c6fd6210 ns:mifpvd-1 iface:eth1 2001:db8:3:0:2880:68ff:fe8d:add0
 f037ea62-ee4f-44e4-825c-16f2f5cc9b3e ns:mifpvd-2 iface:eth1 2001:db8:4:0:38f5:32ff:fe4f:d50a
 
-sudo ./example 4176b877-e8be-8242-9540-6ea13a3a1d60 wget http://[2001:db8:2::1]:80
+sudo ./pvd_run 4176b877-e8be-8242-9540-6ea13a3a1d60 wget http://[2001:db8:2::1]:80
 OK (index.html saved: WWW1)
-sudo ./example f037ea62-ee4f-44e4-825c-16f2f5cc9b3f wget http://[2001:db8:2::1]:80
+sudo ./pvd_run f037ea62-ee4f-44e4-825c-16f2f5cc9b3f wget http://[2001:db8:2::1]:80
 OK (index.html saved: WWW1)
-sudo ./example cf44e119-7e3f-e302-549b-82a9c6fd6210 wget http://[2001:db8:2::1]:80
+sudo ./pvd_run cf44e119-7e3f-e302-549b-82a9c6fd6210 wget http://[2001:db8:2::1]:80
 FAIL (Connecting to [2001:db8:2::1]:80... ^C)
-sudo ./example f037ea62-ee4f-44e4-825c-16f2f5cc9b3e wget http://[2001:db8:2::1]:80
+sudo ./pvd_run f037ea62-ee4f-44e4-825c-16f2f5cc9b3e wget http://[2001:db8:2::1]:80
 FAIL (Connecting to [2001:db8:2::1]:80... ^C)
 
-sudo ./example 4176b877-e8be-8242-9540-6ea13a3a1d60 wget http://[2001:db8:4::1]:80
+sudo ./pvd_run 4176b877-e8be-8242-9540-6ea13a3a1d60 wget http://[2001:db8:4::1]:80
 FAIL (Connecting to [2001:db8:4::1]:80... ^C)
-sudo ./example f037ea62-ee4f-44e4-825c-16f2f5cc9b3f wget http://[2001:db8:4::1]:80
+sudo ./pvd_run f037ea62-ee4f-44e4-825c-16f2f5cc9b3f wget http://[2001:db8:4::1]:80
 FAIL (Connecting to [2001:db8:4::1]:80... ^C)
-sudo ./example cf44e119-7e3f-e302-549b-82a9c6fd6210 wget http://[2001:db8:4::1]:80
+sudo ./pvd_run cf44e119-7e3f-e302-549b-82a9c6fd6210 wget http://[2001:db8:4::1]:80
 OK (index.html saved: WWW2)
-sudo ./example f037ea62-ee4f-44e4-825c-16f2f5cc9b3e wget http://[2001:db8:4::1]:80
+sudo ./pvd_run f037ea62-ee4f-44e4-825c-16f2f5cc9b3e wget http://[2001:db8:4::1]:80
 OK (index.html saved: WWW2)
 

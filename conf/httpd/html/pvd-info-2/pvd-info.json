@@ -1,0 +1,17 @@
+[
+  {
+    "id":"implicit",
+    "type": ["general", "cellular"],
+    "name":"Internet access over Lucy's phone",
+    "bandwidth":"10 Mbps",
+    "pricing":"0,01 $/MB"
+  },
+  {
+    "id":"f037ea62-ee4f-44e4-825c-16f2f5cc9b3e",
+    "type": ["voip"],
+    "name":"voip",
+    "bandwidth":"10 Mbps",
+    "pricing":"0,01 $/MB"
+  }
+]
+

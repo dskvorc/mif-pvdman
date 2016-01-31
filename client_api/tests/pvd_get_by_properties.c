@@ -7,9 +7,11 @@
 #include <pvd_api.h>
 
 /*
- * usage: sudo ./example properties
+ * usage: ./pvd_get_by_properties properties
  * - propertis must be json string
  * - example: {"type":"general", "pricing":"free", "name":"default", "id"=...}
+ * - use escape sequences on ", eg.:
+ *   ../pvd_get_by_properties {\"type\":\"general\"}
  */
 
 int main ( int argc, char *argv[] )
