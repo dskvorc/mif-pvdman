@@ -1,5 +1,3 @@
-# MIF PvD Manager
-
 Prior to run mif-pvdman, following Python modules need to be installed: netaddr, pyroute2.
 Install them using the following commands:
 
