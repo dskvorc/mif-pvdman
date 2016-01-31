@@ -1,8 +1,8 @@
-Prior to run mif-pvdman, following Python modules need to be installed: netaddr, pyroute2.
-Install them using the following commands:
+Prior to run mif-pvdman, following Python3 modules need to be installed: netaddr, pyroute2.
+Install them using the following commands (make sure you are using Python3 version of pip):
 
-  $ sudo pip install --upgrade netaddr
-  $ sudo pip install --upgrade pyroute2
+  $ sudo pip3 install --upgrade netaddr
+  $ sudo pip3 install --upgrade pyroute2
 
 To register mif-pvdman with D-Bus, copy conf/pvd-man.conf to /etc/dbus-1/system.d/
 
