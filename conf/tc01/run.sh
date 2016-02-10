@@ -18,9 +18,9 @@ HTTPDPROG=apache2
 
 # IP addresses for routers and servers (client will get them via MIF manager)
 R1_IP6_1=2001:db8:1::1/64
-R1_IP6_2=2001:db8:1::2/64
+R1_IP6_2=2001:db8:10::2/64
 R2_IP6_1=2001:db8:2::1/64
-R2_IP6_2=2001:db8:2::2/64
+R2_IP6_2=2001:db8:20::2/64
 S1_IP6_1=2001:db8:10::1/64
 S2_IP6_1=2001:db8:20::1/64
 
@@ -41,7 +41,7 @@ if [ "$1" = "start" ]; then
   
   if [ "$2" = "C" ]; then
     # C - client specific code
-    python3 $MIFDIR/main.php -i $DEV1 > pvd-man.log &
+    python3 $MIFDIR/main.php -i $DEV1 2>pvdman-error.log 1> pvd-man.log &
     echo "mif-pvd man started"
     echo "start pvd-aware programs now"
   else
