@@ -32,6 +32,7 @@ class PvdApiServer ( dbus.service.Object ):
 			ret = []
 			for pvd in pvds:
 				ret.append( (pvd[0], pvd[1], pvd[2], json.dumps(pvd[3]) ) )
+			ret.sort ( key = lambda i:i[1])
 		else:
 			ret = ( pvds[0], pvds[1], pvds[2], json.dumps(pvds[3]) )
 		return ret
