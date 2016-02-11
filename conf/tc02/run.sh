@@ -4,12 +4,23 @@ Usage () {
   echo "Usage: $0 start|stop C|R1|R2|S1|S2"
   exit
 }
-if [ "$1" != "start" -a "$1" != "stop" ]; then Usage; fi
-if [ "$2" != "C" -a "$2" != "R1" -a "$2" != "R2" -a "$2" != "S1" -a "$2" != "S2" ]; then Usage; fi
+if [ "$1" != "start" -a "$1" != "stop" -a "$1" != "clean" ]; then Usage; fi
+if [ "$1" != "clean" -a "$2" != "C" -a "$2" != "R1" -a "$2" != "R2" \
+     -a "$2" != "S1" -a "$2" != "S2" ]; then Usage; fi
 
 COMMAND=$1
 ROLE=$2
 
+# directories
+MIFDIR=../.. #root directory of PVD-MAN (with conf/tcXX subdir where configuration files are)
+TCDIR=. #directory where test case files are (e.g. $MIFDIR/conf/tc01)
+TMPDIR=__mif_cache__
+HTTPDDIR=/etc/apache2/sites-enabled #where to store info for web server
+HTTPDPROG=apache2
+# it is assumed that standard httpd is already configured and serving from: /var/www/html
+
+
+# parse configuration file and replace variables ($VAR) with values
 function evaluate {
   input=$1
   output=$2
@@ -20,20 +31,7 @@ function evaluate {
   done < $input
 }
 
-# assuming: DEV0 - general internet access - not to be used during test
-#           DEV1, DEV2 - for tests, have assigned link-local IPv6 addresses
-
-MIFDIR=../.. #root directory of PVD-MAN (with conf/tcXX subdir where configuration files are)
-TCDIR=. #directory where test case files are (e.g. $MIFDIR/conf/tc01)
-TMPDIR=__mif_cache__
-HTTPDDIR=/etc/apache2/sites-enabled #where to store info for web server
-HTTPDPROG=apache2
-# it is assumed that standard httpd is already configured and serving from: /var/www/html
-
-# get settings
-source ./${ROLE}_conf.sh
-
-if [ "$COMMAND" = "start" ]; then
+function start {
   mkdir -p $TMPDIR
   # disable other connections (NetworkManager)
   if [ -n "$DEV0" ]; then nmcli device disconnect $DEV0; fi
@@ -48,20 +46,10 @@ if [ "$COMMAND" = "start" ]; then
     sysctl -w net.ipv6.conf.all.forwarding=1
     if [ -z "$IP1" ]; then
       echo "Address for DEV1 must be provided for $ROLE"
-      exit
+      stop && exit
     fi
     /sbin/ip -6 addr add $IP1 dev $DEV1
 
-    if [ "$ROLE" = "R1" -o "$ROLE" = "R2" ]; then
-      if [ -z "$IP2" ]; then
-        echo "Address for DEV2 must be provided for $ROLE"
-        exit
-      fi
-      /sbin/ip -6 addr add $IP2 dev $DEV2
-      evaluate $TCDIR/radvd.conf $TMPDIR/radvd.conf
-      /usr/local/sbin/radvd -d 5 -n -C $TMPDIR/radvd.conf -m logfile -l $TMPDIR/radvd.log &
-      echo "radvd started"
-    fi
     # http
     systemctl stop $HTTPDPROG.service
     sed s/NAME/$ROLE/ < $TCDIR/httpd.conf > $HTTPDDIR/pvd-httpd.conf
@@ -70,10 +58,25 @@ if [ "$COMMAND" = "start" ]; then
     evaluate $TMPDIR/pvd-info.json /var/www/html/pvdinfo/pvd-info.json
     echo "Web server on $ROLE" > /var/www/html/pvd-test.html
     systemctl start $HTTPDPROG.service
+
+    if [ "$ROLE" = "R1" -o "$ROLE" = "R2" ]; then
+      if [ -z "$IP2" ]; then
+        echo "Address for DEV2 must be provided for $ROLE"
+        stop && exit
+      fi
+      /sbin/ip -6 addr add $IP2 dev $DEV2
+      evaluate $TCDIR/radvd.conf $TMPDIR/radvd.conf
+      /usr/local/sbin/radvd -d 5 -n -C $TMPDIR/radvd.conf -m logfile -l $TMPDIR/radvd.log &
+      echo "radvd started"
+    fi
+    if [ -n "$ROUTE1" ]; then eval $ROUTE1; fi
+    if [ -n "$ROUTE2" ]; then eval $ROUTE2; fi
+    if [ -n "$ROUTE3" ]; then eval $ROUTE3; fi
+
   fi
+}
 
-else # stop
-
+function stop {
   # enable other connections
   if [ -n "$DEV0" ]; then nmcli device connect $DEV0; fi
   
@@ -89,9 +92,25 @@ else # stop
     fi
     # http
     systemctl stop $HTTPDPROG.service
-    rm -f $HTTPDDIR/pvd-httpd.conf
-    rm -rf /var/www/html/pvdinfo/
-    rm -f /var/www/html/pvd-test.html
   fi
-fi
+  cleanup
+  exit
+}
+
+function cleanup {
+  rm -f $HTTPDDIR/pvd-httpd.conf
+  rm -rf /var/www/html/pvdinfo/
+  rm -f /var/www/html/pvd-test.html
+  py3clean .
+}
+
+function clean {
+  rm -rf $TMPDIR
+  cleanup
+}
+
+# get settings
+if [ -n "${ROLE}" ]; then source ./${ROLE}_conf.sh; fi
+
+eval $COMMAND
 
