@@ -1,3 +1,5 @@
+Test case 01
+============
 
 Network:
 --------
@@ -21,3 +23,28 @@ R1-PVD2: 2001:db8:1:2::/64 (explicit) { "type": ["iptv", "wired"],        "bandw
 R2-PVD1: 2001:db8:2:1::/64 (implicit) { "type": ["internet", "cellular"], "bandwidth":"1 Mbps",  "pricing":"0,01 $/MB" }
 R2-PVD2: 2001:db8:2:2::/64 (explicit) { "type": ["voice", "cellular"],    "bandwidth":"1 Mbps",  "pricing":"0,01 $/MB" }
 
+
+Testing:
+--------
+On particular node run:
+$ sudo ./run start <node-name>
+For example, on router R1:
+$ sudo ./run start R1
+
+For stopping services:
+$ sudo ./run stop <node-name>
+
+For cleaning log files, added configuration files, temporary files:
+$ sudo ./run clean <node-name>
+
+On client node, after "sudo ./run start C", applications can be started from client_api/tests:
+(from git root)
+$ cd client_api
+$ make
+$ cd tests
+$ ./pvd_list
+$ sudo ./pvd_run <pvd-id> command
+
+
+Example execution (on client side, after all routers and servers were started):
+-------------------------------------------------------------------------------

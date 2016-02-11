@@ -5,7 +5,7 @@ Usage () {
   exit
 }
 if [ "$1" != "start" -a "$1" != "stop" -a "$1" != "clean" ]; then Usage; fi
-if [ "$1" != "clean" -a "$2" != "C" -a "$2" != "R1" -a "$2" != "R2" \
+if [ "$2" != "C" -a "$2" != "R1" -a "$2" != "R2" \
      -a "$2" != "S1" -a "$2" != "S2" ]; then Usage; fi
 
 COMMAND=$1
@@ -38,6 +38,9 @@ function start {
   
   if [ "$ROLE" = "C" ]; then
     # C - client specific code
+    if [ ! -f /etc/dbus-1/system.d/dbus-pvd-man.conf ]; then
+      cp dbus-pvd-man.conf /etc/dbus-1/system.d/
+    fi
     python3 $MIFDIR/main.py -i $DEV1 2>$TMPDIR/pvdman-error.log 1> $TMPDIR/pvd-man.log &
     echo "mif-pvd man started"
     echo "start pvd-aware programs now"
@@ -46,7 +49,7 @@ function start {
     sysctl -w net.ipv6.conf.all.forwarding=1
     if [ -z "$IP1" ]; then
       echo "Address for DEV1 must be provided for $ROLE"
-      stop && exit
+      stop && exit 1
     fi
     /sbin/ip -6 addr add $IP1 dev $DEV1
 
@@ -62,7 +65,7 @@ function start {
     if [ "$ROLE" = "R1" -o "$ROLE" = "R2" ]; then
       if [ -z "$IP2" ]; then
         echo "Address for DEV2 must be provided for $ROLE"
-        stop && exit
+        stop && exit 1
       fi
       /sbin/ip -6 addr add $IP2 dev $DEV2
       evaluate $TCDIR/radvd.conf $TMPDIR/radvd.conf
@@ -72,8 +75,8 @@ function start {
     if [ -n "$ROUTE1" ]; then eval $ROUTE1; fi
     if [ -n "$ROUTE2" ]; then eval $ROUTE2; fi
     if [ -n "$ROUTE3" ]; then eval $ROUTE3; fi
-
   fi
+  return 0
 }
 
 function stop {
@@ -93,24 +96,21 @@ function stop {
     # http
     systemctl stop $HTTPDPROG.service
   fi
-  cleanup
-  exit
-}
-
-function cleanup {
   rm -f $HTTPDDIR/pvd-httpd.conf
   rm -rf /var/www/html/pvdinfo/
   rm -f /var/www/html/pvd-test.html
-  py3clean .
+  py3clean $MIFDIR
+  return 0
 }
 
 function clean {
+  stop
   rm -rf $TMPDIR
-  cleanup
+  rm -f /etc/dbus-1/system.d/dbus-pvd-man.conf
 }
 
 # get settings
-if [ -n "${ROLE}" ]; then source ./${ROLE}_conf.sh; fi
+source ./${ROLE}_conf.sh
 
 eval $COMMAND
 
