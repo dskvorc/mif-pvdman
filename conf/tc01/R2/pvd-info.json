@@ -1,17 +1,17 @@
 [
   {
     "id":"implicit",
-    "type": ["general", "wired"],
-    "name":"Home internet access",
+    "type": ["internet", "cellular"],
+    "name":"Cellular internet access",
     "bandwidth":"1 Mbps",
-    "pricing":"free"
+    "pricing":"0,01 $/MB"
   },
   {
     "id":"f037ea62-ee4f-44e4-825c-16f2f5cc9b3e",
-    "type": ["iptv", "wired"],
-    "name":"TV",
-    "bandwidth":"10 Mbps",
-    "pricing":"free"
+    "type": ["voice", "cellular"],
+    "name":"phone",
+    "bandwidth":"0,1 Mbps",
+    "pricing":"0,01 $/MB"
   }
 ]
 

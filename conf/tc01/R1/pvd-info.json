@@ -1,9 +1,9 @@
 [
   {
     "id":"implicit",
-    "type": ["general", "wired"],
+    "type": ["internet", "wired"],
     "name":"Home internet access",
-    "bandwidth":"1 Mbps",
+    "bandwidth":"10 Mbps",
     "pricing":"free"
   },
   {
