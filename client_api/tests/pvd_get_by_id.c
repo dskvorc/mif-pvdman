@@ -23,6 +23,10 @@ int main ( int argc, char *argv[] )
 
 	printf ( "Requesting pvd_id: %s:\n", pvd_id );
 	pvd = pvd_get_by_id ( pvd_id );
+
+	if (!pvd)
+		return -1; //error connecting to dbus service
+
 	for (i = 0; pvd[i] != NULL; i++ ) {
 		if ( pvd[i]->id[0] == 0 )
 			printf ("No such pvd!\n" );

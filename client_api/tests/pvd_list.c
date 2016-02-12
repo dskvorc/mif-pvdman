@@ -15,6 +15,8 @@ int main ( int argc, char *argv[] )
 
 	printf ( "Requesting all (*):\n" );
 	pvd = pvd_get_by_id ( "*" );
+	if (!pvd)
+		return -1; //error connecting to dbus service
 
 	for (i = 0; pvd[i] != NULL; i++) {
 		printf ("id: %s ns:%s iface:%s\n", pvd[i]->id, pvd[i]->ns, pvd[i]->iface );

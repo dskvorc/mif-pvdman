@@ -16,7 +16,7 @@
 
 int main ( int argc, char *argv[] )
 {
-	int i = 0;
+	int i = 0, haveit = -1;
 	char *props;
 	struct pvd **pvd;
 
@@ -29,12 +29,16 @@ int main ( int argc, char *argv[] )
 
 	printf ( "Requesting by properties: %s:\n", props );
 	pvd = pvd_get_by_properties ( props );
+	if (!pvd)
+		return -1; //error connecting to dbus service
+
 	for (i = 0; pvd[i] != NULL; i++ ) {
 		if ( pvd[i]->id[0] == 0 ) {
 			printf ("No such pvd!\n" );
 		} else {
 			printf ("id:%s ns:%s iface:%s\n", pvd[i]->id, pvd[i]->ns, pvd[i]->iface );
 			printf ("properties: %s\n\n", pvd[i]->properties );
+			haveit = 0;
 		}
 		free(pvd[i]->id);
 		free(pvd[i]->ns);
@@ -43,5 +47,5 @@ int main ( int argc, char *argv[] )
 	}
 	free(pvd);
 
-	return 0;
+	return haveit;
 }
