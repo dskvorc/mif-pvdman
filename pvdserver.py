@@ -1,5 +1,4 @@
-import dbus
-import dbus.service
+import json, dbus, dbus.service
 from pvdman import PvdManager
 
 # TODO create introspection xml file and put it into
@@ -7,11 +6,11 @@ from pvdman import PvdManager
 
 # test pvd data
 testpvds = [
-	("pvd-id-wired-0", "default", "eth0" ),
-	("pvd-id-wired-1", "test", "eth1" ),
-	("pvd-id-loopback", "default", "lo" )
+	("pvd-id-wired-0", "default", "eth0", "" ),
+	("pvd-id-wired-1", "test", "eth1", "" ),
+	("pvd-id-loopback", "default", "lo", "" )
 ]
-empty_pvd = ("", "", "")
+empty_pvd = ("", "", "", "")
 
 class PvdApiServer ( dbus.service.Object ):
 	''' TODO '''
@@ -27,6 +26,17 @@ class PvdApiServer ( dbus.service.Object ):
 		else: #test only!
 			return testpvds
 
+	@staticmethod
+	def __format_pvds_for_reply (pvds):
+		if isinstance ( pvds, list ):
+			ret = []
+			for pvd in pvds:
+				ret.append( (pvd[0], pvd[1], pvd[2], json.dumps(pvd[3]) ) )
+			ret.sort ( key = lambda i:i[1])
+		else:
+			ret = ( pvds[0], pvds[1], pvds[2], json.dumps(pvds[3]) )
+		return ret
+
 	@dbus.service.method('org.freedesktop.PvDManager')
 	def get_by_id ( self, pvd_id ):
 		''' application request specific pvd information, or list of pvds '''
@@ -38,8 +48,7 @@ class PvdApiServer ( dbus.service.Object ):
 			p = pvds
 		if not p:
 			p = [empty_pvd]
-
-		return p
+		return self.__format_pvds_for_reply (p)
 
 	@dbus.service.method('org.freedesktop.PvDManager')
 	def activate ( self, pvd_id, pid ):
@@ -53,13 +62,36 @@ class PvdApiServer ( dbus.service.Object ):
 
 		# TODO save pid with pvd/namespace
 
-		return p
+		return self.__format_pvds_for_reply (p)
 
 	@dbus.service.signal('org.freedesktop.PvDManager')
 	def stateChanged ( self, message ):
 		# call it like self.stateChanged ( pvd_id ) # id of pvd which changed
 		# TODO
 		pass
+
+	@dbus.service.method('org.freedesktop.PvDManager')
+	def get_by_properties ( self, properties ):
+		''' application request specific pvd information, or list of pvds '''
+		# properties is a json string defining required properties
+		props = json.loads(properties)
+		pvds = self.__get_pvds ()
+
+		# filter pvds: remove ones that don't satisfy criteria
+		for pvd in pvds[:]:
+			pvd_props = pvd[3]
+			for prop in props:
+				val = pvd_props.get(prop)
+				# if not => use default values: TODO
+				if pvd in pvds and ( not val or props[prop] not in val ):
+					pvds.remove(pvd)
+
+		# sort pvds by properties: TODO
+
+		if not pvds:
+			pvds = [empty_pvd]
+
+		return self.__format_pvds_for_reply (pvds)
 
 
 # for test only! (included from main.py)

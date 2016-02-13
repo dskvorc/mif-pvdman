@@ -389,7 +389,7 @@ class PvdManager:
   def getPvds(self):
     pvdData = []
     for pvdKey, pvd in self.pvds.items():
-      pvdData.append((pvd.pvdId, pvd.netnsName, pvd.phyIfaceName))
+      pvdData.append((pvd.pvdId, pvd.netnsName, pvd.phyIfaceName, pvd.pvdInfo.pvd_properties))
     return pvdData
 
 

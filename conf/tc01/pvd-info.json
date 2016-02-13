@@ -1,0 +1,17 @@
+[
+  {
+    "id":"$PVD_1_ID",
+    "type": $PVD_1_TYPE,
+    "name": "$PVD_1_NAME",
+    "bandwidth":"$PVD_1_BANDWITH",
+    "pricing":"$PVD_1_PRICING"
+  },
+  {
+    "id":"$PVD_2_ID",
+    "type": $PVD_2_TYPE,
+    "name": "$PVD_2_NAME",
+    "bandwidth":"$PVD_2_BANDWITH",
+    "pricing":"$PVD_2_PRICING"
+  }
+]
+

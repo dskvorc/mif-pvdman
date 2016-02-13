@@ -1,0 +1,54 @@
+Notes/changes that propose/demonstrate managing of additional PvD properties
+----------------------------------------------------------------------------
+
+With RA messages router provides network relate parameters for PvDs.
+Other parameters (in this "draft" called "properties") are also provided by
+router but on request, using HTTP protocol on router's link-local address.
+Configuration files containging httpd settings and PvD properties are placed in
+conf/httpd directory in this repository.
+
+MIF-pvdman upon receiving PvD information from router, tries to get file with
+PvD properties from the same router. If such file exist, network related PvD
+parameters are extended with ones from received file.
+
+Client application receives all thos additional properties on request, and may
+request only those PvDs that match on requested property.
+
+Current implementation is very rudimentary: files on router are in JSON format;
+MIF-pvdman interpret them (Python!) but client program doesn't (it just forward
+command line specification).
+
+Examples which use properties:
+
+
+$ ./pvd_list
+Requesting all (*):
+id: 4176b877-e8be-8242-9540-6ea13a3a1d60 ns:mifpvd-3 iface:eno33554960
+properties: {"name": "Home internet access", "type": ["general", "wired"], "id": "implicit", "bandwidth": "1 Mbps", "pricing": "free"}
+
+id: f037ea62-ee4f-44e4-825c-16f2f5cc9b3e ns:mifpvd-2 iface:eno33554960
+properties: {"name": "voip", "type": ["voip"], "id": "f037ea62-ee4f-44e4-825c-16f2f5cc9b3e", "bandwidth": "10 Mbps", "pricing": "0,01 $/MB"}
+
+id: f037ea62-ee4f-44e4-825c-16f2f5cc9b3f ns:mifpvd-4 iface:eno33554960
+properties: {"name": "TV", "type": ["iptv", "wired"], "id": "f037ea62-ee4f-44e4-825c-16f2f5cc9b3f", "bandwidth": "10 Mbps", "pricing": "free"}
+
+id: cf44e119-7e3f-e302-549b-82a9c6fd6210 ns:mifpvd-1 iface:eno33554960
+properties: {"name": "Internet access over Lucy's phone", "type": ["general", "cellular"], "id": "implicit", "bandwidth": "10 Mbps", "pricing": "0,01 $/MB"}
+
+$ sudo ./pvd_get_by_id f037ea62-ee4f-44e4-825c-16f2f5cc9b3e
+Requesting pvd_id: f037ea62-ee4f-44e4-825c-16f2f5cc9b3e:
+id:f037ea62-ee4f-44e4-825c-16f2f5cc9b3e ns:mifpvd-2 iface:eno33554960
+properties: {"name": "voip", "type": ["voip"], "id": "f037ea62-ee4f-44e4-825c-16f2f5cc9b3e", "bandwidth": "10 Mbps", "pricing": "0,01 $/MB"}
+
+$ sudo ./pvd_get_by_properties {\"pricing\":\"free\"}
+Requesting by properties: {"pricing":"free"}:
+id:4176b877-e8be-8242-9540-6ea13a3a1d60 ns:mifpvd-3 iface:eno33554960
+properties: {"name": "Home internet access", "type": ["general", "wired"], "id": "implicit", "bandwidth": "1 Mbps", "pricing": "free"}
+
+id:f037ea62-ee4f-44e4-825c-16f2f5cc9b3f ns:mifpvd-4 iface:eno33554960
+properties: {"name": "TV", "type": ["iptv", "wired"], "id": "f037ea62-ee4f-44e4-825c-16f2f5cc9b3f", "bandwidth": "10 Mbps", "pricing": "free"}
+
+$ sudo ./pvd_get_by_properties {\"type\":\"iptv\"}
+Requesting by properties: {"type":"iptv"}:
+id:f037ea62-ee4f-44e4-825c-16f2f5cc9b3f ns:mifpvd-4 iface:eno33554960
+properties: {"name": "TV", "type": ["iptv", "wired"], "id": "f037ea62-ee4f-44e4-825c-16f2f5cc9b3f", "bandwidth": "10 Mbps", "pricing": "free"}
