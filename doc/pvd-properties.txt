@@ -4,22 +4,28 @@ Notes/changes that propose/demonstrate managing of additional PvD properties
 With RA messages router provides network relate parameters for PvDs.
 Other parameters (in this "draft" called "properties") are also provided by
 router but on request, using HTTP protocol on router's link-local address.
-Configuration files containging httpd settings and PvD properties are placed in
-conf/httpd directory in this repository.
 
 MIF-pvdman upon receiving PvD information from router, tries to get file with
 PvD properties from the same router. If such file exist, network related PvD
-parameters are extended with ones from received file.
+parameters are extended with ones (properties) from received file.
 
 Client application receives all thos additional properties on request, and may
 request only those PvDs that match on requested property.
 
 Current implementation is very rudimentary: files on router are in JSON format;
-MIF-pvdman interpret them (Python!) but client program doesn't (it just forward
-command line specification).
+MIF-pvdman interpret them (because its written in Python and using JSON is easy,
+while client applications are written in C).
+In real implementation this should be reversed (only client should interpret
+file with PvDs' properties).
+
+Properties used in this example are just an example (name, type, bandwith, price).
+The idea is to present mechanism to provide additional PvD properties obtained
+by some mechanism (not by RAs) and let client application decide what to do with
+them. Defining elements of properties is some IETF WG job, or it should be left
+undefined (using specific properties in different environments).
+
 
 Examples which use properties:
-
 
 $ ./pvd_list
 Requesting all (*):
