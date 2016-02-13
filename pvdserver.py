@@ -83,7 +83,7 @@ class PvdApiServer ( dbus.service.Object ):
 			for prop in props:
 				val = pvd_props.get(prop)
 				# if not => use default values: TODO
-				if not val or props[prop] not in val:
+				if pvd in pvds and ( not val or props[prop] not in val ):
 					pvds.remove(pvd)
 
 		# sort pvds by properties: TODO

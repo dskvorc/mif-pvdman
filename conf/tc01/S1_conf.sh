@@ -9,7 +9,8 @@ DEV1=eno33554984 # first device used in tests
 
 # IP addresses
 IP1="2001:db8:10::2/64"   # for DEV1
-ROUTE1="/sbin/ip -6 route add 2001:db8::/32 via 2001:db8:10::1"
+ROUTE1_ADD="/sbin/ip -6 route add 2001:db8::/32 via 2001:db8:10::1"
+ROUTE1_DEL="/sbin/ip -6 route del 2001:db8::/32 via 2001:db8:10::1"
 
 # pvd properties
 PVD_1_ID="implicit"

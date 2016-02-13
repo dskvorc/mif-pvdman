@@ -35,7 +35,7 @@ function start {
   mkdir -p $TMPDIR
   # disable other connections (NetworkManager)
   if [ -n "$DEV0" ]; then nmcli device disconnect $DEV0; fi
-  
+
   if [ "$ROLE" = "C" ]; then
     # C - client specific code
     if [ ! -f /etc/dbus-1/system.d/dbus-pvd-man.conf ]; then
@@ -71,10 +71,17 @@ function start {
       evaluate $TCDIR/radvd.conf $TMPDIR/radvd.conf
       /usr/local/sbin/radvd -d 5 -n -C $TMPDIR/radvd.conf -m logfile -l $TMPDIR/radvd.log &
       echo "radvd started"
+    else
+      # start echo udp server
+      if [ ! -f $MIFDIR/client_api/tests/echo_server ]; then
+        ( cd $MIFDIR/client_api && make )
+      fi
+      sleep 1 # wait for IP address to "sink in"
+      $MIFDIR/client_api/tests/echo_server "${IP1:0:-3}" 20000 > $TMPDIR/echo_server.log &
     fi
-    if [ -n "$ROUTE1" ]; then eval $ROUTE1; fi
-    if [ -n "$ROUTE2" ]; then eval $ROUTE2; fi
-    if [ -n "$ROUTE3" ]; then eval $ROUTE3; fi
+    if [ -n "$ROUTE1_ADD" ]; then eval $ROUTE1_ADD; fi
+    if [ -n "$ROUTE2_ADD" ]; then eval $ROUTE2_ADD; fi
+    if [ -n "$ROUTE3_ADD" ]; then eval $ROUTE3_ADD; fi
   fi
   return 0
 }
@@ -82,9 +89,10 @@ function start {
 function stop {
   # enable other connections
   if [ -n "$DEV0" ]; then nmcli device connect $DEV0; fi
-  
+
   if [ "$ROLE" = "C" ]; then
     killall -SIGINT python3 && echo "mif-pvd man stopped"
+    py3clean $MIFDIR
   else
     # R1/R2/S1/S2
     sysctl -w net.ipv6.conf.all.forwarding=0
@@ -92,14 +100,18 @@ function stop {
     if [ "$ROLE" = "R1" -o "$ROLE" = "R2" ]; then
       if [ -n "$IP2" ]; then /sbin/ip -6 addr del $IP2 dev $DEV2; fi
       killall radvd && echo "radvd stopped"
+    else
+      killall echo_server && echo "echo_server stopped"
     fi
     # http
     systemctl stop $HTTPDPROG.service
+    rm -f $HTTPDDIR/pvd-httpd.conf
+    rm -rf /var/www/html/pvdinfo/
+    rm -f /var/www/html/pvd-test.html
+    if [ -n "$ROUTE1_DEL" ]; then eval $ROUTE1_DEL; fi
+    if [ -n "$ROUTE2_DEL" ]; then eval $ROUTE2_DEL; fi
+    if [ -n "$ROUTE3_DEL" ]; then eval $ROUTE3_DEL; fi
   fi
-  rm -f $HTTPDDIR/pvd-httpd.conf
-  rm -rf /var/www/html/pvdinfo/
-  rm -f /var/www/html/pvd-test.html
-  py3clean $MIFDIR
   return 0
 }
 
@@ -107,6 +119,7 @@ function clean {
   stop
   rm -rf $TMPDIR
   rm -f /etc/dbus-1/system.d/dbus-pvd-man.conf
+  ( cd $MIFDIR/client_api && make clean )
 }
 
 # get settings

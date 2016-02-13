@@ -17,10 +17,12 @@ $(PVDLIB): $(OBJLIB)
 pvd_api.o: pvd_api.c pvd_api.h
 	gcc -c $< -o $@ -I./ -static $(GFLAGS)
 
-.PHONY: tests
+.PHONY: tests clean_local clean
 tests:
 	@cd tests && $(MAKE)
 
-clean:
+clean_local:
 	@-rm -f $(TARGET) *.o *.a
-	@cd tests && $(MAKE) clean
+
+clean: clean_local
+	@cd tests && $(MAKE) clean_local
